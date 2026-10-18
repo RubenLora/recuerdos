@@ -64,7 +64,7 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '11 (2026-10-19)';
+  const VERSION = '12 (2026-10-19)';
   const FROG_SCALE = 0.56; // size of the frog relative to the first version (1 = the big one) // shown in the hidden menu; raise with every upload
 
   // ---------------------------------------------------------------- storage
@@ -275,7 +275,7 @@
   let hero = null;          // flying grandchild
   let frog = null;          // frog on the paddle
   let avocados = [];        // shots from the avocado cannon
-  let cannonTimer = 0;
+  let cannonTimer = 0, cannonAng = -Math.PI / 2; // where the barrel points (radians, -π/2 = straight up)
   let sinceCapsule = 0;     // bricks broken since the last capsule
   let bag = [];             // shuffled bag so every power-up shows up
   let faces = [];           // [{ name, img }]
@@ -1068,21 +1068,29 @@
 
   // --- avocado cannon: sits on the paddle and shoots an avocado every half second. Shots
   // lean toward the nearest brick, so he only has to be roughly under the bricks.
+  function cannonAim() {
+    const x0 = paddle.x, y0 = L.paddleY - L.paddleH;
+    const list = alive();
+    if (!list.length) return -Math.PI / 2;
+    let best = null, bd = Infinity;
+    for (const k of list) { const dx = k.x + k.w / 2 - x0, dy = k.y + k.h / 2 - y0, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = k; } }
+    return clamp(Math.atan2(best.y + best.h / 2 - y0, best.x + best.w / 2 - x0), -Math.PI / 2 - 0.45, -Math.PI / 2 + 0.45);
+  }
+
   function stepCannon(dt) {
     if (power && power.type === 'cannon') {
+      // the barrel turns smoothly toward the nearest brick, then fires along it
+      const want = cannonAim();
+      cannonAng += (want - cannonAng) * Math.min(1, dt * 8);
       cannonTimer -= dt;
       if (cannonTimer <= 0) {
         cannonTimer = 0.5;
-        const sp = H * 0.7, x0 = paddle.x, y0 = L.paddleY - L.paddleH;
-        let ang = -Math.PI / 2;
-        const list = alive();
-        if (list.length) {
-          let best = null, bd = Infinity;
-          for (const k of list) { const dx = k.x + k.w / 2 - x0, dy = k.y + k.h / 2 - y0, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = k; } }
-          const want = Math.atan2(best.y + best.h / 2 - y0, best.x + best.w / 2 - x0);
-          ang = clamp(want, -Math.PI / 2 - 0.45, -Math.PI / 2 + 0.45);
+        const sp = H * 0.7, len = L.paddleH * 2.2;
+        const x0 = paddle.x + Math.cos(cannonAng) * len, y0 = L.paddleY - L.paddleH * 1.1 + Math.sin(cannonAng) * len; // the muzzle
+        avocados.push({ x: x0, y: y0, vx: Math.cos(cannonAng) * sp, vy: Math.sin(cannonAng) * sp, rot: Math.random() * 6, r: L.ballR * 0.9 });
+        for (let i = 0; i < 6; i++) { // puff of smoke
+          particles.push({ x: x0, y: y0, vx: Math.cos(cannonAng) * 60 + (Math.random() - 0.5) * 80, vy: Math.sin(cannonAng) * 60 - 20, s: 5 + Math.random() * 6, c: 'rgba(230,230,230,.8)', t: 0, life: 0.5 });
         }
-        avocados.push({ x: x0, y: y0, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, rot: Math.random() * 6, r: L.ballR * 0.9 });
         sfx.shot(); buzz(8);
       }
     }
@@ -1544,16 +1552,49 @@
     ctx.restore();
   }
 
+  // A cartoon pirate cannon: a wooden carriage with two wheels fixed on the paddle, and a black
+  // barrel with bands that tilts toward where the next avocado goes. The barrel kicks back
+  // on each shot and the fuse keeps sparking.
   function drawCannon() {
     if (!(power && power.type === 'cannon')) return;
-    const w = L.paddleH * 1.3, h = L.paddleH * 1.6, x = paddle.x, y = L.paddleY - L.paddleH / 2;
-    const kick = cannonTimer > 0.42 ? (cannonTimer - 0.42) / 0.08 : 0; // recoil just after a shot
+    const u = L.paddleH, x = paddle.x, y = L.paddleY - L.paddleH / 2; // y = top of the paddle
+    const kick = cannonTimer > 0.4 ? (cannonTimer - 0.4) / 0.1 : 0;  // recoil just after a shot
+    const now = performance.now() / 1000;
     ctx.save();
-    ctx.translate(x, y + kick * 4);
-    ctx.fillStyle = '#4a4a5a'; ctx.strokeStyle = '#1b1430'; ctx.lineWidth = 2.5;
-    rr(-w / 2, -h, w, h, w * 0.3); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#7cc242'; rr(-w * 0.32, -h - 3, w * 0.64, 6, 3); ctx.fill(); // green rim
-    ctx.beginPath(); ctx.arc(0, 0, w * 0.55, Math.PI, 0); ctx.fillStyle = '#2f3140'; ctx.fill(); ctx.stroke(); // base
+    ctx.translate(x, y);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    // carriage (wood)
+    ctx.fillStyle = '#9a5a2a'; ctx.strokeStyle = '#4a2a0c'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(-1.2 * u, -0.1 * u); ctx.lineTo(1.2 * u, -0.1 * u); ctx.lineTo(0.9 * u, -0.9 * u); ctx.lineTo(-0.9 * u, -0.9 * u); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(74,42,12,.5)'; ctx.lineWidth = 1.5; // wood grain
+    ctx.beginPath(); ctx.moveTo(-0.8 * u, -0.5 * u); ctx.lineTo(0.8 * u, -0.5 * u); ctx.stroke();
+    // wheels
+    [-0.75, 0.75].forEach(s => {
+      const wx = s * u, wy = -0.1 * u, r = 0.38 * u;
+      ctx.fillStyle = '#6b3d14'; ctx.strokeStyle = '#3a1f06'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(wx, wy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#c98a4a'; ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) { const a = i * Math.PI / 3 + now * 2 * s; ctx.beginPath(); ctx.moveTo(wx - Math.cos(a) * r * 0.8, wy - Math.sin(a) * r * 0.8); ctx.lineTo(wx + Math.cos(a) * r * 0.8, wy + Math.sin(a) * r * 0.8); ctx.stroke(); }
+      ctx.fillStyle = '#3a1f06'; ctx.beginPath(); ctx.arc(wx, wy, r * 0.22, 0, Math.PI * 2); ctx.fill();
+    });
+    // barrel, turning around the trunnion on the carriage
+    ctx.translate(0, -0.6 * u);
+    ctx.rotate(cannonAng + Math.PI / 2); // 0 = straight up
+    ctx.translate(0, kick * 0.35 * u);   // recoil along the barrel
+    const len = 1.9 * u, wb = 0.55 * u, wm = 0.42 * u; // length, width at the breech, at the muzzle
+    const g = ctx.createLinearGradient(-wb, 0, wb, 0); g.addColorStop(0, '#2a2a33'); g.addColorStop(0.4, '#6a6a78'); g.addColorStop(1, '#1b1b22');
+    ctx.fillStyle = g; ctx.strokeStyle = '#111118'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(-wb, 0.35 * u); ctx.lineTo(wb, 0.35 * u); ctx.lineTo(wm, -len); ctx.lineTo(-wm, -len); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#8a8a99'; // bands and the muzzle rim
+    [[0.05, wb * 0.95], [-0.6, wb * 0.8], [-len / u + 0.18, wm * 1.15]].forEach(([yy, hw]) => { rr(-hw, yy * u - 0.09 * u, hw * 2, 0.18 * u, 0.05 * u); ctx.fill(); ctx.stroke(); });
+    ctx.fillStyle = '#111118'; ctx.beginPath(); ctx.ellipse(0, -len, wm * 0.75, 0.12 * u, 0, 0, Math.PI * 2); ctx.fill(); // the bore
+    ctx.fillStyle = '#2a2a33'; ctx.beginPath(); ctx.arc(0, 0.5 * u, 0.2 * u, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // breech knob
+    // fuse with a spark
+    ctx.strokeStyle = '#d9b36b'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0.1 * u, 0.1 * u); ctx.quadraticCurveTo(0.6 * u, 0.4 * u, 0.7 * u, 0.9 * u); ctx.stroke();
+    const sp = 0.09 * u * (1 + 0.5 * Math.sin(now * 25));
+    ctx.fillStyle = '#ffb347'; ctx.beginPath(); ctx.arc(0.7 * u, 0.9 * u, sp * 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff3b0'; ctx.beginPath(); ctx.arc(0.7 * u, 0.9 * u, sp, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 
