@@ -65,6 +65,33 @@
   #next.show { visibility: visible; opacity: 1; }
   #pause { background: rgba(10, 6, 24, .6); }
 
+  /* Gear button (settings) on the start, pause and level-complete screens */
+  .gear {
+    position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px;
+    width: 60px; height: 60px; border-radius: 50%; border: 3px solid rgba(42,34,56,.35);
+    background: rgba(255,250,240,.92); color: #2a2238; font-size: 32px; line-height: 1;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; pointer-events: auto;
+    box-shadow: 0 4px 14px rgba(0,0,0,.4); padding: 0;
+  }
+
+  /* Gallery of discovered photos */
+  #gallery {
+    position: fixed; inset: 0; display: none; overflow-y: auto; touch-action: pan-y; z-index: 20;
+    background: var(--menu-bg); color: var(--menu-text); padding: 16px; box-sizing: border-box;
+  }
+  #gallery.show { display: block; }
+  #gallery header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  #gallery .mbtn { font-size: 20px; padding: 12px 24px; border-radius: 12px; border: 1px solid #2a2238; background: #2a2238; color: #fff; cursor: pointer; }
+  #gallery h2 { margin: 0; font-size: 24px; }
+  #g-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .g-item { background: #fff; border-radius: 12px; padding: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.15); cursor: pointer; }
+  .g-item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: #ddd; display: block; }
+  .g-cap { font-size: 15px; margin-top: 6px; min-height: 1.2em; text-align: center; }
+  #viewer { position: fixed; inset: 0; display: none; z-index: 30; background: #0b0714; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; box-sizing: border-box; }
+  #viewer.show { display: flex; }
+  #viewer img { max-width: 100%; max-height: 80vh; border: 8px solid #fffdf7; border-radius: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+  #viewer .mid { color: var(--text); }
+
   /* Family password: typed once per device when the game is installed */
   #unlock { background: var(--bg); justify-content: center; gap: 18px; touch-action: auto; -webkit-user-select: text; user-select: text; }
   #unlock input { font: inherit; font-size: 28px; padding: 14px 18px; border-radius: 16px; border: 3px solid #c9b896; width: min(90%, 420px); box-sizing: border-box; text-align: center; background: #fffaf0; color: #2a2238; }
@@ -101,12 +128,14 @@
   <canvas id="game"></canvas>
 
   <div id="title" class="screen">
+    <button id="gear-title" class="gear" aria-label="Ajustes">⚙</button>
     <div id="greet" class="big">¡Hola!</div>
     <div id="count" class="mid"></div>
     <button id="play" class="btn">Jugar</button>
   </div>
 
   <div id="complete" class="screen">
+    <button id="gear-complete" class="gear" aria-label="Ajustes">⚙</button>
     <div class="panel" id="panel">
       <div id="well" class="big">¡Lo lograste!</div>
       <div id="caption" class="mid"></div>
@@ -125,13 +154,24 @@
   </div>
 
   <div id="pause" class="screen">
+    <button id="gear-pause" class="gear" aria-label="Ajustes">⚙</button>
     <div class="big" id="pause-text">Toca para seguir</div>
   </div>
 
+  <div id="gallery">
+    <header><h2 id="g-title">Fotos descubiertas</h2><button class="mbtn primary" id="g-close">Volver</button></header>
+    <div id="g-grid"></div>
+  </div>
+  <div id="viewer">
+    <img id="v-img" alt="">
+    <div class="mid" id="v-cap"></div>
+    <div class="small" style="color:#fffaf0">Toca para volver</div>
+  </div>
+
   <div id="menu" role="dialog" aria-label="Ajustes">
-    <h2>Ajustes (para la familia)</h2>
+    <h2>Ajustes</h2>
     <p id="m-version" style="opacity:.6"></p>
-    <p>Este menú se abre manteniendo presionado el saludo de la pantalla de inicio durante 3 segundos.</p>
+    <button class="mbtn primary" id="m-gallery">Ver las fotos descubiertas</button>
 
     <h3>Jugador</h3>
     <label>Nombre en el saludo <input type="text" id="m-name" maxlength="30"></label>
@@ -169,11 +209,18 @@
     <h3>Sonido y vibración</h3>
     <label>Sonido <input type="checkbox" id="m-sound"></label>
     <label>Música de fondo <input type="checkbox" id="m-music"></label>
+    <label>Pista
+      <select id="m-track">
+        <option value="fiesta">Fiesta</option>
+        <option value="tropical">Tropical</option>
+        <option value="misterio">Misteriosa</option>
+      </select>
+    </label>
     <label>Vibración <input type="checkbox" id="m-vibe"></label>
 
     <h3>Progreso</h3>
     <p id="m-progress"></p>
-    <button class="mbtn danger" id="m-reset">Reiniciar progreso</button>
+    <button class="mbtn danger" id="m-reset">Borrar el progreso y empezar de cero</button>
 
     <h3></h3>
     <button class="mbtn primary" id="m-close">Guardar y volver</button>

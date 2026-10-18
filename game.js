@@ -5,7 +5,7 @@
   const T = Object.assign({
     hello: '¡Hola, {name}!', play: 'Jugar', tapToLaunch: 'Toca para lanzar',
     moveHint: '← Mueve el dedo →', next: 'Siguiente', tapToContinue: 'Toca para seguir',
-    revealedCount: 'Fotos descubiertas: {n}',
+    revealedCount: 'Fotos descubiertas: {n}', levelDone: 'Nivel {n} superado', nextLevel: 'Nivel {n}',
     wellDone: ['¡Lo lograste!'], cheers: ['¡Muy bien!'], startCheers: ['¡Vamos, {nick}!'], nick: 'Abu',
     powerMulti: '¡Bolas imán!', powerFire: '¡Bola de fuego!', powerHero: '¡Súper {name}!',
     powerHeroNoName: '¡Súper héroe!', powerFrog: '¡La rana!', powerCannon: '¡Cañón de aguacates!'
@@ -64,7 +64,7 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '12 (2026-10-19)';
+  const VERSION = '13 (2026-10-19)';
   const FROG_SCALE = 0.56; // size of the frog relative to the first version (1 = the big one) // shown in the hidden menu; raise with every upload
 
   // ---------------------------------------------------------------- storage
@@ -75,7 +75,7 @@
   const DEFAULT_PROGRESS = { level: 0, revealed: 0, current: null, lastPhoto: null, seen: [], everShown: [], adapt: { speed: 0.9, paddle: 0 } };
   const settings = Object.assign({
     playerName: CFG.playerName || '', speed: 'lenta', paddle: 'grande',
-    safetyNet: false, sound: true, music: true, vibration: true, powerups: true
+    safetyNet: false, sound: true, music: true, track: 'fiesta', vibration: true, powerups: true
   }, store.get('ark.settings', {}));
   let progress = Object.assign(JSON.parse(JSON.stringify(DEFAULT_PROGRESS)), store.get('ark.progress', {}));
   progress.adapt = Object.assign({ speed: 0.9, paddle: 0 }, progress.adapt);
@@ -611,19 +611,35 @@
   }
   const vary = (f, semis) => f * 2 ** ((Math.random() * 2 - 1) * (semis || 0.5) / 12);
 
-  // --- music: a festive loop in C major at 132 bpm, "oom-pah" style: bass on beats 1 and 3,
-  // short chord stabs on 2 and 4, a shaker on every eighth, a soft pad underneath, and a
-  // lively melody from the major pentatonic scale with a little echo. Eight bars of C, G,
-  // A minor, F, then C, F, G, C. Plays while the game is open, stops while the page is hidden,
-  // and steps back for the jingles.
-  const MUSIC_BAR = 60 / 132 * 4, MUSIC_AHEAD = 1.5, MUSIC_VOLUME = 0.045;
-  const MUSIC_CHORDS = [ // MIDI note numbers (69 = A4, 440 Hz)
-    { pad: [60, 64, 67], bass: 36 }, { pad: [59, 62, 67], bass: 31 }, { pad: [57, 60, 64], bass: 33 }, { pad: [57, 60, 65], bass: 29 },
-    { pad: [60, 64, 67], bass: 36 }, { pad: [57, 60, 65], bass: 29 }, { pad: [59, 62, 67], bass: 31 }, { pad: [60, 64, 67], bass: 36 }
-  ];
-  const MELODY = [72, 74, 76, 79, 81, 84, 86, 88]; // C major pentatonic, two octaves
-  let melodyIdx = 2;
+  // --- music: three tracks, chosen in the settings menu. All are generated as they play.
+  //   fiesta:   festive "oom-pah" in C major, 132 bpm (bass, chord stabs, drums, lively melody)
+  //   tropical: calypso feel in C major, 104 bpm (off-beat chord "skanks", steel-drum melody,
+  //             clave and shaker)
+  //   misterio: cheerful but mysterious, A minor with swing, 118 bpm (shimmering pad,
+  //             plucked bass, xylophone melody, snaps)
+  // Plays while the game is open, stops while hidden or paused, steps back for the jingles.
+  const MUSIC_AHEAD = 1.5, MUSIC_VOLUME = 0.045;
   const midiHz = n => 440 * 2 ** ((n - 69) / 12);
+  const MUSIC_STYLES = {
+    fiesta: {
+      bpm: 132, echo: 3 / 8, filter: 3000,
+      chords: [[60, 64, 67, 36], [59, 62, 67, 31], [57, 60, 64, 33], [57, 60, 65, 29], [60, 64, 67, 36], [57, 60, 65, 29], [59, 62, 67, 31], [60, 64, 67, 36]],
+      scale: [72, 74, 76, 79, 81, 84, 86, 88], root: 5
+    },
+    tropical: {
+      bpm: 104, echo: 1 / 4, filter: 3800,
+      chords: [[60, 64, 67, 69, 36], [57, 60, 65, 69, 29], [59, 62, 67, 69, 31], [57, 60, 65, 69, 29], [60, 64, 67, 69, 36], [57, 60, 64, 67, 33], [59, 62, 65, 67, 31], [60, 64, 67, 69, 36]],
+      scale: [72, 74, 76, 79, 81, 84, 86, 88], root: 5
+    },
+    misterio: {
+      bpm: 118, echo: 3 / 8, filter: 2600,
+      chords: [[57, 60, 64, 33], [53, 57, 60, 29], [52, 56, 59, 28], [57, 60, 64, 33], [50, 53, 57, 26], [57, 60, 64, 33], [52, 56, 59, 28], [57, 60, 64, 33]],
+      scale: [69, 71, 72, 74, 76, 77, 80, 81, 83, 84], root: 7 // A harmonic minor
+    }
+  };
+  const musicStyle = () => MUSIC_STYLES[settings.track] || MUSIC_STYLES.fiesta;
+  const musicBarLen = () => 240 / musicStyle().bpm;
+  let melodyIdx = 2;
   let music = null, musicTimer = 0, musicNextBar = 0, musicBarNo = 0;
 
   function musicNote(dests, f, type, at, attack, hold, release, vol, detune) {
@@ -636,8 +652,8 @@
     o.connect(g); dests.forEach(d => g.connect(d));
     o.start(at); o.stop(at + attack + hold + release + 0.05);
   }
-  // Percussion straight into the music's volume: a shaker tick (band-passed noise), a kick
-  // (a sine dropping fast) and a snare (noise around 1.8 kHz).
+  // Percussion straight into the music's volume: a tick (band-passed noise), a kick (a sine
+  // dropping fast) and a woodblock (a short high sine).
   function musicTick(at, vol, freq, dur) {
     const src = AC.createBufferSource(); src.buffer = noiseBuffer();
     const f = AC.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq || 2600; f.Q.value = 1.2;
@@ -645,55 +661,96 @@
     g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.0001, at + (dur || 0.06));
     src.connect(f); f.connect(g); g.connect(music.gain); src.start(at); src.stop(at + (dur || 0.06) + 0.01);
   }
-  function musicKick(at, vol) {
+  function musicKick(at, vol, hi, lo) {
     const o = AC.createOscillator(), g = AC.createGain();
-    o.type = 'sine'; o.frequency.setValueAtTime(150, at); o.frequency.exponentialRampToValueAtTime(45, at + 0.12);
+    o.type = 'sine'; o.frequency.setValueAtTime(hi || 150, at); o.frequency.exponentialRampToValueAtTime(lo || 45, at + 0.12);
     g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.18);
     o.connect(g); g.connect(music.gain); o.start(at); o.stop(at + 0.2);
   }
+  function musicBlock(at, vol) { musicNote([music.gain], 1100, 'sine', at, 0.002, 0.01, 0.06, vol); musicTick(at, vol * 0.6, 4000, 0.02); }
+
+  // The next melody note: mostly steps, a leap now and then; the last bar of eight ends on the root.
+  function nextMelody(st, n, i, last) {
+    const step = Math.random() < 0.2 ? (Math.random() < 0.5 ? -2 : 3) : (Math.random() < 0.55 ? 1 : -1);
+    melodyIdx = clamp(melodyIdx + step, 0, st.scale.length - 1);
+    if (n % 8 === 7 && i >= last) melodyIdx = st.root;
+    return midiHz(st.scale[melodyIdx]);
+  }
+
   function playBar(n, t) {
-    const chord = MUSIC_CHORDS[n % MUSIC_CHORDS.length], beat = MUSIC_BAR / 4;
-    // soft pad underneath
-    chord.pad.forEach(p => musicNote([music.filter], midiHz(p), 'sine', t, 0.1, MUSIC_BAR - 0.3, 0.3, 0.05));
-    // oom (bass, beats 1 and 3) ... pah (chord stabs, beats 2 and 4)
-    [0, 2].forEach(i => musicNote([music.filter], midiHz(chord.bass + (i ? 7 : 0)), 'triangle', t + i * beat, 0.01, 0.12, 0.18, 0.32));
-    [1, 3].forEach(i => chord.pad.forEach(p => musicNote([music.filter], midiHz(p), 'triangle', t + i * beat, 0.01, 0.06, 0.12, 0.11)));
-    // drums: kick on 1 and 3, snare on 2 and 4, shaker on every eighth (louder off the beat)
-    [0, 2].forEach(i => musicKick(t + i * beat, 0.9));
-    [1, 3].forEach(i => musicTick(t + i * beat, 0.5, 1800, 0.12));
-    for (let i = 0; i < 8; i++) musicTick(t + i * beat / 2, i % 2 ? 0.12 : 0.06);
-    // melody: eighth notes, mostly steps, a leap now and then, an occasional rest; the last bar
-    // of every eight lands on the root
-    for (let i = 0; i < 8; i++) {
-      if (Math.random() < 0.15) continue;
-      const step = Math.random() < 0.2 ? (Math.random() < 0.5 ? -2 : 3) : (Math.random() < 0.55 ? 1 : -1);
-      melodyIdx = clamp(melodyIdx + step, 0, MELODY.length - 1);
-      if (n % 8 === 7 && i >= 6) melodyIdx = 5; // C
-      const vol = i % 2 === 0 ? 0.24 : 0.15;
-      musicNote([music.filter, music.echo], midiHz(MELODY[melodyIdx]), 'triangle', t + i * beat / 2, 0.01, 0.05, 0.3, vol);
+    const st = musicStyle(), bar = musicBarLen(), beat = bar / 4;
+    const ch = st.chords[n % st.chords.length], pad = ch.slice(0, -1), bass = ch[ch.length - 1];
+    const F = [music.filter], FE = [music.filter, music.echo];
+    if (settings.track === 'tropical') {
+      pad.forEach(p => musicNote(F, midiHz(p), 'sine', t, 0.1, bar - 0.3, 0.3, 0.04));
+      // calypso bass: root, root (and of 2), fifth, octave (and of 4)
+      [[0, 0], [1.5, 0], [2, 7], [3.5, 12]].forEach(([b, d]) => musicNote(F, midiHz(bass + d), 'triangle', t + b * beat, 0.01, 0.14, 0.2, 0.3));
+      // chord skanks on the off-beats
+      [0.5, 1.5, 2.5, 3.5].forEach(b => pad.forEach(p => musicNote(F, midiHz(p), 'triangle', t + b * beat, 0.005, 0.05, 0.1, 0.1)));
+      // clave (son 3-2) on a woodblock, congas, shaker on sixteenths
+      [0, 0.75, 1.5, 2.5, 3].forEach(b => musicBlock(t + b * beat, 0.35));
+      [0, 2].forEach(b => musicKick(t + b * beat, 0.6, 220, 90)); musicKick(t + 2.5 * beat, 0.35, 320, 140);
+      for (let i = 0; i < 16; i++) musicTick(t + i * beat / 4, i % 4 === 2 ? 0.1 : 0.05, 3000, 0.04);
+      // steel-drum melody: bright, quick decay, with its octave
+      for (let i = 0; i < 8; i++) {
+        if (Math.random() < 0.25) continue;
+        const f = nextMelody(st, n, i, 6), at = t + i * beat / 2;
+        musicNote(FE, f, 'sine', at, 0.005, 0.02, 0.28, 0.28); musicNote(FE, f * 2, 'sine', at, 0.005, 0.01, 0.12, 0.12);
+        if (Math.random() < 0.2) { musicNote(FE, f, 'sine', at + beat / 4, 0.005, 0.02, 0.2, 0.18); } // a quick roll
+      }
+    } else if (settings.track === 'misterio') {
+      // shimmering pad: two slightly detuned sines per note, plus a high quiet fifth
+      pad.forEach(p => { musicNote(F, midiHz(p), 'sine', t, 0.3, bar - 0.6, 0.4, 0.05, -7); musicNote(F, midiHz(p), 'sine', t, 0.3, bar - 0.6, 0.4, 0.05, 7); });
+      musicNote(F, midiHz(pad[0] + 19), 'sine', t, 0.6, bar - 0.8, 0.5, 0.025);
+      const sw = beat * 0.17; // swing: the off-beat eighths come a little late
+      // plucked bass: root on 1 and 3, fifth on the swung "and" of 2 and 4
+      [[0, 0], [1.5, 7], [2, 0], [3.5, 7]].forEach(([b, d]) => musicNote(F, midiHz(bass + d), 'triangle', t + b * beat + (b % 1 ? sw : 0), 0.005, 0.05, 0.25, 0.3));
+      // light kick on 1, finger snaps on 2 and 4, swung hats
+      musicKick(t, 0.5, 120, 50);
+      [1, 3].forEach(b => musicTick(t + b * beat, 0.35, 1500, 0.04));
+      for (let i = 0; i < 8; i++) musicTick(t + i * beat / 2 + (i % 2 ? sw : 0), i % 2 ? 0.1 : 0.05, 5000, 0.03);
+      // xylophone melody, swung
+      for (let i = 0; i < 8; i++) {
+        if (Math.random() < 0.3) continue;
+        const f = nextMelody(st, n, i, 6), at = t + i * beat / 2 + (i % 2 ? sw : 0);
+        musicNote(FE, f, 'triangle', at, 0.005, 0.02, 0.22, 0.26); musicNote(FE, f * 3, 'sine', at, 0.005, 0.01, 0.08, 0.06);
+      }
+    } else { // fiesta
+      pad.forEach(p => musicNote(F, midiHz(p), 'sine', t, 0.1, bar - 0.3, 0.3, 0.05));
+      [0, 2].forEach(i => musicNote(F, midiHz(bass + (i ? 7 : 0)), 'triangle', t + i * beat, 0.01, 0.12, 0.18, 0.32));
+      [1, 3].forEach(i => pad.forEach(p => musicNote(F, midiHz(p), 'triangle', t + i * beat, 0.01, 0.06, 0.12, 0.11)));
+      [0, 2].forEach(i => musicKick(t + i * beat, 0.9));
+      [1, 3].forEach(i => musicTick(t + i * beat, 0.5, 1800, 0.12));
+      for (let i = 0; i < 8; i++) musicTick(t + i * beat / 2, i % 2 ? 0.12 : 0.06);
+      for (let i = 0; i < 8; i++) {
+        if (Math.random() < 0.15) continue;
+        const f = nextMelody(st, n, i, 6);
+        musicNote(FE, f, 'triangle', t + i * beat / 2, 0.01, 0.05, 0.3, i % 2 === 0 ? 0.24 : 0.15);
+      }
     }
   }
   function scheduleMusic() {
     if (!music || !AC || AC.state !== 'running') return;
     try {
+      const bar = musicBarLen();
       if (musicNextBar < AC.currentTime) musicNextBar = AC.currentTime + 0.1;
-      while (musicNextBar < AC.currentTime + MUSIC_AHEAD) { playBar(musicBarNo++, musicNextBar); musicNextBar += MUSIC_BAR; }
+      while (musicNextBar < AC.currentTime + MUSIC_AHEAD) { playBar(musicBarNo++, musicNextBar); musicNextBar += bar; }
     } catch (e) { stopMusic(); }
   }
   function startMusic() {
     if (!settings.music || !settings.sound || music || !AC || document.hidden) return;
     try {
-      const t = AC.currentTime;
+      const st = musicStyle(), t = AC.currentTime;
       const gain = AC.createGain(); gain.gain.setValueAtTime(0, t); gain.gain.linearRampToValueAtTime(MUSIC_VOLUME, t + 1.5);
       const duck = AC.createGain(); duck.gain.value = 1;
-      const filter = AC.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 3000; filter.Q.value = 0.5;
-      const echo = AC.createDelay(1); echo.delayTime.value = MUSIC_BAR * 3 / 8; // dotted eighth
+      const filter = AC.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = st.filter; filter.Q.value = 0.5;
+      const echo = AC.createDelay(1); echo.delayTime.value = musicBarLen() * st.echo;
       const feedback = AC.createGain(); feedback.gain.value = 0.3;
       const wet = AC.createGain(); wet.gain.value = 0.25;
       filter.connect(gain); echo.connect(feedback); feedback.connect(echo); echo.connect(wet); wet.connect(gain);
       gain.connect(duck); duck.connect(master);
       music = { gain, duck, filter, echo, feedback, wet };
-      musicNextBar = t + 0.1;
+      musicNextBar = t + 0.1; musicBarNo = 0; melodyIdx = Math.min(2, st.scale.length - 1);
       musicTimer = setInterval(scheduleMusic, 250);
       scheduleMusic();
     } catch (e) { music = null; }
@@ -986,7 +1043,7 @@
     $('well').textContent = pick(T.wellDone);
     const cap = currentPhoto ? currentPhoto.caption : '';
     $('caption').textContent = cap; $('caption').style.display = cap ? '' : 'none';
-    $('total').textContent = fmt(T.revealedCount, { n: progress.revealed });
+    $('total').textContent = fmt(T.levelDone, { n: progress.level });
     $('complete').classList.add('show');
     requestAnimationFrame(() => { L.panelTop = $('panel').getBoundingClientRect().top; });
     setTimeout(() => $('panel').classList.add('show'), 500);
@@ -1762,7 +1819,7 @@
   function updateTitle() {
     const name = (settings.playerName || '').trim();
     $('greet').textContent = name ? fmt(T.hello, { name }) : fmt(T.hello, { name: '' }).replace(/,\s*!/, '!');
-    $('count').textContent = progress.revealed > 0 ? fmt(T.revealedCount, { n: progress.revealed }) : '';
+    $('count').textContent = progress.level > 0 ? fmt(T.nextLevel, { n: progress.level + 1 }) : '';
     $('play').textContent = T.play;
     $('next').textContent = T.next;
     $('pause-text').textContent = T.tapToContinue;
@@ -1868,15 +1925,51 @@
 
   let menuChanged = false;
   function openMenu() {
+    if (['ready', 'play', 'missed'].includes(state)) pause();
     $('m-name').value = settings.playerName || '';
     $('m-speed').value = settings.speed; $('m-paddle').value = settings.paddle;
     $('m-net').checked = !!settings.safetyNet; $('m-sound').checked = !!settings.sound; $('m-vibe').checked = !!settings.vibration;
-    $('m-power').checked = !!settings.powerups; $('m-music').checked = !!settings.music;
+    $('m-power').checked = !!settings.powerups; $('m-music').checked = !!settings.music; $('m-track').value = settings.track;
     $('m-status').textContent = ''; menuChanged = false;
     $('m-version').textContent = 'Versión ' + VERSION + (FILTER_OK ? '' : ' · desenfoque alternativo');
     $('menu').classList.add('show');
     renderMenuPhotos();
   }
+  // The gear buttons on the start, pause and level-complete screens open the menu.
+  ['gear-title', 'gear-pause', 'gear-complete'].forEach(id => $(id).addEventListener('click', e => { e.stopPropagation(); audioInit(); openMenu(); }));
+
+  // --- gallery of the photos discovered so far
+  const galleryUrls = {};
+  async function photoUrlFor(entry) {
+    if (!entry.enc) return entry.src;
+    if (!galleryUrls[entry.id]) {
+      const bytes = await fetchDecrypted(entry.src);
+      galleryUrls[entry.id] = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+    }
+    return galleryUrls[entry.id];
+  }
+  async function openGallery() {
+    const wrap = $('g-grid'); wrap.innerHTML = '';
+    const ids = progress.everShown.slice().reverse(); // newest first
+    const entries = ids.map(id => pool.find(p => p.id === id)).filter(Boolean);
+    $('g-title').textContent = `Fotos descubiertas: ${entries.length}`;
+    $('gallery').classList.add('show');
+    for (const e of entries) {
+      const d = document.createElement('div'); d.className = 'g-item';
+      const img = document.createElement('img'); img.alt = '';
+      const cap = document.createElement('div'); cap.className = 'g-cap'; cap.textContent = e.caption || '';
+      d.append(img, cap); wrap.append(d);
+      d.addEventListener('click', async () => {
+        $('v-img').src = await photoUrlFor(e); $('v-cap').textContent = e.caption || '';
+        $('viewer').classList.add('show');
+      });
+      try { img.src = await photoUrlFor(e); } catch (err) { d.remove(); }
+      if (!$('gallery').classList.contains('show')) return; // closed meanwhile
+    }
+  }
+  $('m-gallery').addEventListener('click', openGallery);
+  $('g-close').addEventListener('click', () => $('gallery').classList.remove('show'));
+  $('viewer').addEventListener('click', () => $('viewer').classList.remove('show'));
 
   function fileToRecord(file) {
     return new Promise((res, rej) => {
@@ -1938,12 +2031,20 @@
     settings.speed = $('m-speed').value; settings.paddle = $('m-paddle').value;
     settings.safetyNet = $('m-net').checked; settings.sound = $('m-sound').checked; settings.vibration = $('m-vibe').checked;
     settings.powerups = $('m-power').checked; settings.music = $('m-music').checked;
+    const trackChanged = settings.track !== $('m-track').value;
+    settings.track = $('m-track').value;
     saveSettings();
-    if (!settings.music || !settings.sound) stopMusic(); else if (AC) startMusic();
+    if (!settings.music || !settings.sound || trackChanged) stopMusic();
+    if (settings.music && settings.sound && AC && state !== 'paused') startMusic();
     $('menu').classList.remove('show');
     updateTitle();
     if (menuChanged || !pool.find(p => p.id === progress.current)) {
+      // photos or progress changed: start again from the start screen
+      $('pause').classList.remove('show'); $('complete').classList.remove('show');
+      $('panel').classList.remove('show'); $('next').classList.remove('show');
+      setState('boot');
       await loadPool(); await prepareLevel(); setState('title');
+      $('title').classList.add('show');
     }
   });
 

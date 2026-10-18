@@ -12,6 +12,8 @@ window.GAME_CONFIG = {
     next: 'Siguiente',
     tapToContinue: 'Toca para seguir',
     revealedCount: 'Fotos descubiertas: {n}',
+    levelDone: 'Nivel {n} superado',   // on the level-complete panel
+    nextLevel: 'Nivel {n}',            // on the start screen, the level about to be played
     wellDone: ['¡Lo lograste!', '¡Qué bien!', '¡Precioso!', '¡Excelente!', '¡Muy bien hecho!'],
     cheers: ['¡Muy bien!', '¡Eso es!', '¡Qué bueno!', '¡Sigue así!', '¡Excelente!', '¡Vamos, {nick}!', '¡Así se hace, {nick}!'],
     nick: 'Abu',                                   // short name used in the cheers
