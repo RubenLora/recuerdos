@@ -20,24 +20,27 @@
   const COLORS = ['#ff7a59', '#ffb547', '#ffd84d', '#5ed6a0', '#4fb3ff', '#a88bff'];
   const SCALE = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99];
   const COLS = 7;
+  // X = normal brick (one hit). S = stone brick (two hits: the first one cracks it).
   const PATTERNS = [
     ['XXXXXXX', 'XXXXXXX', 'XXXXXXX'],
-    ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'],
-    ['...X...', '..XXX..', '.XXXXX.', 'XXXXXXX', 'XXXXXXX'],
-    ['XXXXXXX', 'XXXXXXX', 'XXXXXXX', 'XXXXXXX'],
-    ['..XXX..', '.XXXXX.', 'XXXXXXX', '.XXXXX.', '..XXX..'],
-    ['X.X.X.X', '.X.X.X.', 'X.X.X.X', '.X.X.X.', 'X.X.X.X'],
-    ['XXXXXXX', '.XXXXX.', '..XXX..', '..XXX..', '.XXXXX.', 'XXXXXXX'],
-    ['XX.X.XX', 'XX.X.XX', 'XX.X.XX', 'XX.X.XX', 'XX.X.XX'],
-    ['XXXXXXX', 'X.....X', 'X.XXX.X', 'X.....X', 'XXXXXXX'],
-    ['XXXXXXX', 'XXXXXXX', 'XXXXXXX', 'XXXXXXX', 'XXXXXXX']
+    ['.XX.XX.', 'XXXXXXX', 'XXSXSXX', '.XXXXX.', '..XXX..', '...X...'],
+    ['...S...', '..XXX..', '.XXXXX.', 'XXXXXXX', 'XXXXXXX'],
+    ['XXXXXXX', 'XSXXXSX', 'XXXXXXX', 'XXXXXXX'],
+    ['..XXX..', '.XXXXX.', 'XXSSSXX', '.XXXXX.', '..XXX..'],
+    ['X.X.X.X', '.S.S.S.', 'X.X.X.X', '.X.X.X.', 'X.X.X.X'],
+    ['XXXXXXX', '.XXXXX.', '..SSS..', '..XXX..', '.XXXXX.', 'XXXXXXX'],
+    ['XX.S.XX', 'XX.X.XX', 'XX.S.XX', 'XX.X.XX', 'XX.S.XX'],
+    ['SXXXXXS', 'X.....X', 'X.SSS.X', 'X.....X', 'SXXXXXS'],
+    ['XXXXXXX', 'XSXSXSX', 'XXXXXXX', 'XSXSXSX', 'XXXXXXX']
   ];
+  const STONE_COLOR = '#a7b0ba';
   // Power-ups ("sorpresas"). None of them needs faster hands: capsules drift to the
   // paddle by themselves, extra balls are pulled to the paddle, the hero and the frog
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '7 (2026-10-19)'; // shown in the hidden menu; raise with every upload
+  const VERSION = '8 (2026-10-19)';
+  const FROG_SCALE = 0.4; // size of the frog relative to the first version (1 = the big one) // shown in the hidden menu; raise with every upload
 
   // ---------------------------------------------------------------- storage
   const store = {
@@ -212,7 +215,7 @@
   let stateTime = 0;
   const paddle = { x: 0, tx: 0, w: 0, squish: 0 };
   let balls = [];
-  let bricks = [], dying = [], particles = [], floaters = [], confetti = [], ghosts = [];
+  let bricks = [], dying = [], particles = [], floaters = [], confetti = [], ghosts = [], balloons = [];
   let total = 0, destroyed = 0, reveal = 0, revealShown = 0, cheersGiven = 0;
   let launchTimer = 0, sinceBrick = 0, noteIdx = 0, missTimer = 0, netFlash = 0, freeze = 0;
   let showMoveHint = true;
@@ -247,12 +250,13 @@
     const pat = PATTERNS[progress.level % PATTERNS.length];
     bricks = [];
     pat.forEach((row, ri) => [...row].forEach((ch, ci) => {
-      if (ch !== 'X') return;
-      const b = { row: ri, col: ci, color: COLORS[ri % COLORS.length], alive: true, held: false };
+      if (ch !== 'X' && ch !== 'S') return;
+      const stone = ch === 'S';
+      const b = { row: ri, col: ci, color: stone ? STONE_COLOR : COLORS[ri % COLORS.length], alive: true, held: false, stone, hp: stone ? 2 : 1 };
       placeBrick(b); bricks.push(b);
     }));
     total = bricks.length; destroyed = 0; reveal = 0; revealShown = 0; cheersGiven = 0;
-    dying = []; particles = []; floaters = []; confetti = []; ghosts = [];
+    dying = []; particles = []; floaters = []; confetti = []; ghosts = []; balloons = [];
     capsules = []; power = null; hero = null; frog = null; avocados = []; sinceCapsule = 0;
     sinceBrick = 0;
   }
@@ -277,7 +281,7 @@
   function captionFromName(name) {
     const base = name.replace(/\.[^.]+$/, '');
     if (/^(img|pxl|dsc|dcim|screenshot|whatsapp|vid|photo|image|\d{6,})/i.test(base)) return '';
-    return base.replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
+    return base.replace(/\(\s*\d+\s*\)/g, ' ').replace(/_+/g, ' ').replace(/\s+/g, ' ').replace(/^[\s-]+|[\s-]+$/g, '');
   }
 
   async function loadPool() {
@@ -536,16 +540,19 @@
   }
   const vary = (f, semis) => f * 2 ** ((Math.random() * 2 - 1) * (semis || 0.5) / 12);
 
-  // --- music: a calm loop of four chords (A minor, F, C, G; 4 s each) on a soft pad, a bass
-  // note under each, and now and then a quiet melody note with a little echo. Plays while the
-  // game is open, stops while the page is hidden, and steps back for the jingles.
-  const MUSIC_BAR = 4, MUSIC_AHEAD = 1.5, MUSIC_VOLUME = 0.035;
+  // --- music: a cheerful loop in C major (C, G, A minor, F; 2 s each, 120 bpm): a soft pad,
+  // a bouncy bass (root and octave on alternate beats), and a plucked melody from the major
+  // pentatonic scale that mostly moves by steps, with a little echo. Plays while the game is
+  // open, stops while the page is hidden, and steps back for the jingles.
+  const MUSIC_BAR = 2, MUSIC_AHEAD = 1.5, MUSIC_VOLUME = 0.035;
   const MUSIC_CHORDS = [ // MIDI note numbers (69 = A4, 440 Hz)
-    { pad: [57, 60, 64], bass: 45, melody: [69, 72, 76, 79, 81] },
-    { pad: [57, 60, 65], bass: 41, melody: [69, 72, 74, 79, 81] },
-    { pad: [55, 60, 64], bass: 48, melody: [72, 74, 76, 79, 81] },
-    { pad: [55, 59, 62], bass: 43, melody: [69, 74, 76, 79] }
+    { pad: [60, 64, 67], bass: 36 },
+    { pad: [59, 62, 67], bass: 31 },
+    { pad: [57, 60, 64], bass: 33 },
+    { pad: [57, 60, 65], bass: 29 }
   ];
+  const MELODY = [72, 74, 76, 79, 81, 84, 86, 88]; // C major pentatonic, two octaves
+  let melodyIdx = 2;
   const midiHz = n => 440 * 2 ** ((n - 69) / 12);
   let music = null, musicTimer = 0, musicNextBar = 0, musicBarNo = 0;
 
@@ -560,14 +567,20 @@
     o.start(at); o.stop(at + attack + hold + release + 0.05);
   }
   function playBar(n, t) {
-    const chord = MUSIC_CHORDS[n % MUSIC_CHORDS.length];
+    const chord = MUSIC_CHORDS[n % MUSIC_CHORDS.length], beat = MUSIC_BAR / 4;
     chord.pad.forEach(p => {
-      musicNote([music.filter], midiHz(p), 'sine', t, 1.2, MUSIC_BAR - 1.2, 1.5, 0.1);
-      musicNote([music.filter], midiHz(p), 'triangle', t, 1.2, MUSIC_BAR - 1.2, 1.5, 0.1, 4);
+      musicNote([music.filter], midiHz(p), 'triangle', t, 0.15, MUSIC_BAR - 0.4, 0.5, 0.09);
+      musicNote([music.filter], midiHz(p), 'sine', t, 0.15, MUSIC_BAR - 0.4, 0.5, 0.07, 5);
     });
-    musicNote([music.filter], midiHz(chord.bass), 'triangle', t, 0.3, 1.5, 2.2, 0.25);
-    for (let beat = 0; beat < 4; beat++) {
-      if (Math.random() < 0.45) musicNote([music.filter, music.echo], midiHz(pick(chord.melody)), 'sine', t + beat, 0.03, 0.05, 1, 0.2);
+    // bass: root, octave, root, octave — the bounce
+    for (let i = 0; i < 4; i++) musicNote([music.filter], midiHz(chord.bass + (i % 2) * 12), 'triangle', t + i * beat, 0.01, 0.12, 0.2, 0.28);
+    // melody: eighth notes, mostly steps up or down, sometimes a rest
+    for (let i = 0; i < 8; i++) {
+      if (Math.random() < 0.25) continue;
+      const step = Math.random() < 0.15 ? (Math.random() < 0.5 ? -2 : 2) : (Math.random() < 0.5 ? -1 : 1);
+      melodyIdx = clamp(melodyIdx + step, 0, MELODY.length - 1);
+      const vol = i % 2 === 0 ? 0.22 : 0.14; // on-beat notes a little louder
+      musicNote([music.filter, music.echo], midiHz(MELODY[melodyIdx]), 'triangle', t + i * beat / 2, 0.01, 0.06, 0.35, vol);
     }
   }
   function scheduleMusic() {
@@ -583,8 +596,8 @@
       const t = AC.currentTime;
       const gain = AC.createGain(); gain.gain.setValueAtTime(0, t); gain.gain.linearRampToValueAtTime(MUSIC_VOLUME, t + 1.5);
       const duck = AC.createGain(); duck.gain.value = 1;
-      const filter = AC.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 1400; filter.Q.value = 0.5;
-      const echo = AC.createDelay(1); echo.delayTime.value = 0.375;
+      const filter = AC.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 2200; filter.Q.value = 0.5;
+      const echo = AC.createDelay(1); echo.delayTime.value = MUSIC_BAR * 3 / 8; // dotted eighth
       const feedback = AC.createGain(); feedback.gain.value = 0.3;
       const wet = AC.createGain(); wet.gain.value = 0.25;
       filter.connect(gain); echo.connect(feedback); feedback.connect(echo); echo.connect(wet); wet.connect(gain);
@@ -638,10 +651,18 @@
     slurp() { glide(250, 520, 0.18, 'sine', 0.22); tone(620, 0.08, 'sine', 0.12, 0.18); },
     shot() { glide(220, 440, 0.08, 'square', 0.06); puff(0.12, 1200, 0.08); },
     splat() { glide(180, 70, 0.18, 'sine', 0.25); puff(0.2, 600, 0.15); },
+    crack() { tone(vary(330), 0.08, 'square', 0.08); puff(0.18, 900, 0.1); },
+    // Level clear: a fanfare (quick run up to a held high note over a C major chord), then a
+    // short happy tune, and a final chord. About 5 s; the music steps back meanwhile.
     win() {
-      duckMusic(3);
-      [261.63, 329.63, 392.0, 523.25, 659.25, 783.99].forEach((f, i) => bell(f, i * 0.14, 0.32));
-      [261.63, 329.63, 392.0].forEach(f => tone(f, 2.2, 'sine', 0.12, 0.9));
+      duckMusic(5);
+      [392, 523.25, 659.25, 783.99].forEach((f, i) => tone(f, 0.14, 'triangle', 0.3, i * 0.11));
+      tone(1046.5, 0.9, 'triangle', 0.3, 0.46); tone(1046.5, 0.9, 'sine', 0.2, 0.46);
+      [523.25, 659.25, 783.99].forEach(f => tone(f, 1.0, 'sine', 0.1, 0.46));
+      const tune = [[783.99, 0], [783.99, 0.18], [880, 0.36], [1046.5, 0.54], [880, 0.78], [783.99, 0.96], [659.25, 1.2], [783.99, 1.44], [1046.5, 1.72]];
+      tune.forEach(([f, d]) => { tone(f, 0.2, 'triangle', 0.26, 1.5 + d); tone(f / 2, 0.2, 'sine', 0.08, 1.5 + d); });
+      [[523.25, 1.5], [392, 1.98], [440, 2.46], [349.23, 2.94]].forEach(([f, d]) => tone(f / 2, 0.45, 'triangle', 0.2, d));
+      [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => { bell(f, 3.4 + i * 0.1, 0.3); tone(f, 1.6, 'sine', 0.08, 3.4 + i * 0.1); });
     }
   };
   function buzz(p) { if (settings.vibration && navigator.vibrate) { try { navigator.vibrate(p); } catch (e) { /* ignore */ } } }
@@ -736,14 +757,14 @@
       const nx = clamp(b.x, k.x, k.x + k.w), ny = clamp(b.y, k.y, k.y + k.h);
       const dx = b.x - nx, dy = b.y - ny;
       if (dx * dx + dy * dy > b.r * b.r) continue;
-      if (fire) { destroyBrick(k); continue; } // fireball passes straight through
+      if (fire) { destroyBrick(k); continue; } // fireball passes straight through, stone included
       const cx = k.x + k.w / 2, cy = k.y + k.h / 2;
       const ox = (k.w / 2 + b.r) - Math.abs(b.x - cx);
       const oy = (k.h / 2 + b.r) - Math.abs(b.y - cy);
       if (ox < oy) { b.vx = b.x < cx ? -Math.abs(b.vx) : Math.abs(b.vx); b.x += b.x < cx ? -ox : ox; }
       else { b.vy = b.y < cy ? -Math.abs(b.vy) : Math.abs(b.vy); b.y += b.y < cy ? -oy : oy; }
       fixVertical(b, sp);
-      destroyBrick(k);
+      hitBrick(k);
       break;
     }
   }
@@ -757,6 +778,21 @@
       if (balls.length > 1) balls.splice(balls.indexOf(b), 1); // an extra ball: no penalty
       else miss();
     }
+  }
+
+  // One hit on a brick: a stone brick cracks the first time, any other brick breaks.
+  function hitBrick(k, at) {
+    if (!k.alive) return;
+    if (k.hp > 1) {
+      k.hp--; sinceBrick = 0;
+      const px = at ? at.x : k.x + k.w / 2, py = at ? at.y : k.y + k.h / 2;
+      for (let i = 0; i < 5; i++) {
+        particles.push({ x: px, y: py, vx: (Math.random() - 0.5) * W * 0.4, vy: -Math.random() * H * 0.2, s: 3 + Math.random() * 4, c: '#dfe5ea', t: 0, life: 0.6 });
+      }
+      sfx.crack(); buzz(10);
+      return;
+    }
+    destroyBrick(k, at);
   }
 
   // Removes a brick with all the feedback. `at` = where the particles start (default: the brick).
@@ -797,12 +833,21 @@
     reveal = 1;
     capsules = []; power = null; hero = null; frog = null; avocados = [];
     sfx.win(); buzz([30, 60, 30]);
-    for (let i = 0; i < 60; i++) {
+    const PARTY = ['#ff6b9d', '#ffd84d', '#5ed6a0', '#4fb3ff', '#ff8a3d', '#b48bff', '#fff'];
+    for (let i = 0; i < 170; i++) {
+      const kind = Math.random();
       confetti.push({
-        x: Math.random() * W, y: -Math.random() * H * 0.6, vy: H * (0.08 + Math.random() * 0.1),
-        sway: Math.random() * 6, ph: Math.random() * 6, s: 10 + Math.random() * 14,
-        c: pick(['#ff9bb3', '#ffd84d', '#9be7c4', '#a9d6ff', '#ffc38a', '#d8c2ff']),
-        heart: Math.random() < 0.4, t: 0, life: 6 + Math.random() * 2
+        x: Math.random() * W, y: -Math.random() * H * 1.2, vy: H * (0.09 + Math.random() * 0.14),
+        sway: Math.random() * 8, ph: Math.random() * 6, s: 8 + Math.random() * 12,
+        c: pick(PARTY), heart: kind < 0.25, rect: kind > 0.6, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 8,
+        t: 0, life: 8 + Math.random() * 3
+      });
+    }
+    for (let i = 0; i < 9; i++) {
+      balloons.push({
+        x: W * (0.08 + 0.84 * (i + Math.random() * 0.6) / 9), y: H + 60 + Math.random() * H * 0.5,
+        vy: H * (0.07 + Math.random() * 0.05), sway: 10 + Math.random() * 14, ph: Math.random() * 6,
+        s: clamp(W * 0.07, 22, 44) * (0.85 + Math.random() * 0.4), c: pick(PARTY.slice(0, 6)), t: 0
       });
     }
     progress.revealed++;
@@ -923,7 +968,7 @@
         avocados.splice(avocados.indexOf(a), 1);
         for (let i = 0; i < 8; i++) particles.push({ x: a.x, y: a.y, vx: (Math.random() - 0.5) * W * 0.4, vy: -Math.random() * H * 0.2, s: 4 + Math.random() * 4, c: '#7cc242', t: 0, life: 0.6 });
         sfx.splat();
-        destroyBrick(hit, { x: a.x, y: a.y });
+        hitBrick(hit, { x: a.x, y: a.y }); // a stone brick takes two avocados
       } else if (a.y < -a.r * 2 || a.x < -a.r || a.x > W + a.r) {
         avocados.splice(avocados.indexOf(a), 1);
       }
@@ -1050,8 +1095,10 @@
     particles = particles.filter(p => p.t < p.life);
     floaters.forEach(f => { f.t += dt; }); floaters = floaters.filter(f => f.t < f.dur);
     ghosts.forEach(g => { g.t += dt; }); ghosts = ghosts.filter(g => g.t < 0.6);
-    confetti.forEach(c => { c.t += dt; c.y += c.vy * dt; c.x += Math.sin(c.ph + c.t * 1.5) * c.sway * dt * 10; });
+    confetti.forEach(c => { c.t += dt; c.y += c.vy * dt; c.x += Math.sin(c.ph + c.t * 1.5) * c.sway * dt * 10; c.rot += (c.vr || 0) * dt; });
     confetti = confetti.filter(c => c.t < c.life && c.y < H + 40);
+    balloons.forEach(b => { b.t += dt; b.y -= b.vy * dt; b.x += Math.sin(b.ph + b.t * 1.2) * b.sway * dt; });
+    balloons = balloons.filter(b => b.y > -b.s * 4);
   }
 
   // ---------------------------------------------------------------- render
@@ -1265,7 +1312,7 @@
   function drawFrog() {
     if (!frog) return;
     const fp = frogPos();
-    const r = L.paddleH * 1.25;            // head radius
+    const r = L.paddleH * 1.25 * FROG_SCALE; // head radius
     const baseY = fp.y;                    // where it sits
     const bodyCy = baseY - r * 0.9, headCy = baseY - r * 2.1;
     const mouthY = headCy + r * 0.15;
@@ -1294,21 +1341,20 @@
     [-1, 1].forEach(s => {
       ctx.beginPath(); ctx.ellipse(fp.x + s * r * 0.55, baseY - r * 0.2, r * 0.32, r * 0.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     });
-    // tongue (drawn before the head so it comes out of the mouth)
+    // head, then the open mouth, then the tongue on top of everything so it clearly leaves the mouth
+    drawFrogFace(fp.x, headCy, r, frog.blink);
     if (frog.tongue) {
+      ctx.fillStyle = dark; ctx.beginPath(); ctx.ellipse(fp.x, mouthY, r * 0.34, r * 0.26, 0, 0, Math.PI * 2); ctx.fill();
       const tg = frog.tongue, b = tg.b;
       const tx = fp.x + (b.x + b.w / 2 - fp.x) * tg.k, ty = mouthY + (b.y + b.h / 2 - mouthY) * tg.k;
-      ctx.strokeStyle = '#ff6f91'; ctx.lineWidth = r * 0.28;
+      ctx.strokeStyle = '#ff6f91'; ctx.lineWidth = Math.max(4, r * 0.3);
       ctx.beginPath(); ctx.moveTo(fp.x, mouthY); ctx.lineTo(tx, ty); ctx.stroke();
-      ctx.fillStyle = '#ff6f91'; ctx.beginPath(); ctx.arc(tx, ty, r * 0.3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ff6f91'; ctx.beginPath(); ctx.arc(tx, ty, Math.max(5, r * 0.32), 0, Math.PI * 2); ctx.fill();
       if (tg.phase === 'in') { // the brick travels back on the tongue, shrinking
         const s = 0.3 + 0.7 * tg.k;
         drawBrickAt(tx - b.w * s / 2, ty - b.h * s / 2, b.w * s, b.h * s, b.color, 1);
       }
     }
-    // head
-    drawFrogFace(fp.x, headCy, r, frog.blink);
-    if (frog.tongue) { ctx.fillStyle = dark; ctx.beginPath(); ctx.ellipse(fp.x, mouthY, r * 0.3, r * 0.22, 0, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
   }
 
@@ -1350,10 +1396,53 @@
       if (c.heart) {
         ctx.font = `${c.s * 1.6}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('♥', c.x, c.y);
+      } else if (c.rect) {
+        ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rot);
+        ctx.fillRect(-c.s * 0.6, -c.s * 0.25, c.s * 1.2, c.s * 0.5); ctx.restore();
       } else {
         ctx.beginPath(); ctx.arc(c.x, c.y, c.s / 2, 0, Math.PI * 2); ctx.fill();
       }
     });
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBalloons() {
+    balloons.forEach(b => {
+      const s = b.s, tilt = Math.sin(b.ph + b.t * 1.2) * 0.12;
+      ctx.save();
+      ctx.translate(b.x, b.y); ctx.rotate(tilt);
+      // string
+      ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, s * 1.3);
+      ctx.quadraticCurveTo(Math.sin(b.t * 3) * s * 0.4, s * 2.4, Math.cos(b.t * 2) * s * 0.3, s * 3.6); ctx.stroke();
+      // knot
+      ctx.fillStyle = b.c; ctx.beginPath(); ctx.moveTo(-s * 0.18, s * 1.42); ctx.lineTo(s * 0.18, s * 1.42); ctx.lineTo(0, s * 1.15); ctx.closePath(); ctx.fill();
+      // body
+      ctx.beginPath(); ctx.ellipse(0, 0, s, s * 1.22, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(30,15,40,.45)'; ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.beginPath(); ctx.ellipse(-s * 0.35, -s * 0.45, s * 0.22, s * 0.38, -0.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
+  }
+
+  // A stone brick: grey rounded block with light speckles. After the first hit it shows cracks.
+  function drawStone(b, alpha) {
+    const x = b.x, y = b.y, w = b.w, h = b.h, r = Math.min(h * 0.3, 10);
+    ctx.globalAlpha = alpha;
+    const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, '#c9d0d7'); g.addColorStop(1, '#8a939e');
+    rr(x, y, w, h, r); ctx.fillStyle = g; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(30,15,40,.6)'; ctx.stroke();
+    rr(x + 4, y + 3, w - 8, h * 0.3, r * 0.7); ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fill();
+    ctx.fillStyle = 'rgba(40,40,60,.22)';
+    [[0.2, 0.6], [0.45, 0.4], [0.7, 0.7], [0.85, 0.35], [0.3, 0.8]].forEach(([fx, fy], i) => {
+      ctx.beginPath(); ctx.arc(x + w * fx, y + h * fy, 1.5 + ((b.col + b.row + i) % 3) * 0.8, 0, Math.PI * 2); ctx.fill();
+    });
+    if (b.hp === 1) { // cracked
+      ctx.strokeStyle = 'rgba(35,25,45,.85)'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(x + w * 0.15, y + h * 0.1); ctx.lineTo(x + w * 0.35, y + h * 0.45); ctx.lineTo(x + w * 0.28, y + h * 0.7); ctx.lineTo(x + w * 0.5, y + h * 0.95); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + w * 0.35, y + h * 0.45); ctx.lineTo(x + w * 0.6, y + h * 0.3); ctx.lineTo(x + w * 0.85, y + h * 0.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + w * 0.6, y + h * 0.3); ctx.lineTo(x + w * 0.68, y + h * 0.05); ctx.stroke();
+    }
     ctx.globalAlpha = 1;
   }
 
@@ -1382,11 +1471,11 @@
     ctx.clearRect(0, 0, W, H);
     if (state === 'complete') {
       if (layers) ctx.drawImage(layers.heavy, 0, 0, W, H);
-      drawPolaroid(); drawConfetti();
+      drawBalloons(); drawPolaroid(); drawConfetti();
       return;
     }
     drawBackground();
-    bricks.forEach(b => { if (b.alive && !b.held) drawBrick(b, 1, 0.94); });
+    bricks.forEach(b => { if (b.alive && !b.held) { if (b.stone) drawStone(b, 0.96); else drawBrick(b, 1, 0.94); } });
     dying.forEach(d => drawBrick(d.b, 1 + d.t * 1.2, Math.max(0, 1 - d.t / 0.3)));
     particles.forEach(p => {
       ctx.globalAlpha = clamp(1 - p.t / p.life, 0, 1);
@@ -1417,6 +1506,7 @@
       const k = f.t / f.dur, pop = Math.min(1, f.t / 0.25);
       text(f.text, W / 2, H * 0.58 - k * H * 0.06, Math.min(W * 0.13, 70) * (0.7 + 0.3 * pop), Math.min(1, (1 - k) * 2.5));
     });
+    drawBalloons();
     drawConfetti();
   }
 
