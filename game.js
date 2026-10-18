@@ -37,7 +37,7 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10 };
-  const VERSION = '5 (2026-10-19)'; // shown in the hidden menu; raise with every upload
+  const VERSION = '6 (2026-10-19)'; // shown in the hidden menu; raise with every upload
 
   // ---------------------------------------------------------------- storage
   const store = {
@@ -397,7 +397,7 @@
     } else {
       // No canvas blur (iPad): shrink in halves to a tiny copy, then enlarge in halves.
       // Each step averages pixels, which gives a smooth blur without blocky squares.
-      const f = Math.max(2, px / 2.5);
+      const f = Math.max(2, px * 0.9);
       const tw = Math.max(2, Math.ceil(w / f)), th = Math.max(2, Math.ceil(h / f));
       let cur = mk(w, h); drawCover(cur.getContext('2d'), src, w, h, 1.05);
       const steps = [];
@@ -428,8 +428,9 @@
     const w = cv.width, h = cv.height;
     const sharp = mk(w, h); drawCover(sharp.getContext('2d'), src, w, h, 1);
     layers = {
-      heavy: blurredLayer(src, w, h, 26 * DPR, 0.45, 0.4),
-      soft: blurredLayer(src, w, h, 9 * DPR, 0.2, 0.22),
+      // Blur scaled to the screen so the starting photo can't be recognised on any device.
+      heavy: blurredLayer(src, w, h, Math.max(w, h) * 0.12, 0.25, 0.35),
+      soft: blurredLayer(src, w, h, Math.max(w, h) * 0.035, 0.25, 0.25),
       sharp,
       comp: mk(w, h), tmp: mk(w, h), compP: -1
     };
