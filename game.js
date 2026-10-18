@@ -20,32 +20,41 @@
   const COLORS = ['#ff7a59', '#ffb547', '#ffd84d', '#5ed6a0', '#4fb3ff', '#a88bff'];
   const SCALE = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99];
   const COLS = 7;
-  // Levels, in order. X = normal brick (one hit). S = stone brick (two hits: the first cracks it).
-  // rows: a fixed layout on a 7-column grid. move: 'wave' = rows slide left and right;
-  // 'drift' = rows travel sideways and wrap around. ring: bricks on turning circles
-  // (n bricks, r = size relative to the biggest circle, speed in turns per 10 s; negative = the
-  // other way, stones = which bricks are stone). After the last level they repeat, harder:
-  // more stone bricks and faster circles.
+  // Levels, in order of difficulty. X = normal brick (one hit). S = stone brick (two hits: the
+  // first cracks it). rows: a layout on a 7-column grid. move: 'wave' = rows slide left and
+  // right; 'bob' = columns move up and down; 'drift' = rows travel sideways and wrap around.
+  // ring: bricks on turning circles (n bricks, r = size relative to the biggest circle, speed
+  // in turns per 10 s; negative = the other way, stones = which bricks are stone). After the
+  // last level they repeat, harder: more stone bricks and faster circles.
   const LEVELS = [
+    // 1-6: fixed layouts, stones appear little by little
     { rows: ['XXXXXXX', 'XXXXXXX', 'XXXXXXX'] },
     { rows: ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'] },
     { rows: ['...S...', '..XXX..', '.XXXXX.', 'XXXXXXX', 'XXXXXXX'] },
     { rows: ['XXXXXXX', 'XSXXXSX', 'XXXXXXX', 'XXXXXXX'] },
-    { ring: [{ n: 12, r: 1, speed: 0.35, stones: [0, 6] }] },
     { rows: ['..XXX..', '.XXXXX.', 'XXSSSXX', '.XXXXX.', '..XXX..'] },
-    { rows: ['.XXXXX.', '.XSXSX.', '.XXXXX.', '.XSXSX.'], move: 'wave' },
     { rows: ['X.X.X.X', '.S.S.S.', 'X.X.X.X', '.X.X.X.', 'X.X.X.X'] },
+    // 7-12: first moving levels, gentle
+    { rows: ['.XXXXX.', '.XXXXX.', '.XXXXX.', '.XXXXX.'], move: 'wave' },
+    { rows: ['XXXXXXX', 'XXXXXXX', 'XXXXXXX'], move: 'bob' },
+    { ring: [{ n: 12, r: 1, speed: 0.3, stones: [0, 6] }] },
+    { rows: ['.XXXXX.', '.XSXSX.', '.XXXXX.', '.XSXSX.'], move: 'wave' },
     { rows: ['XXXXXXX', '.XXXXX.', '..SSS..', '..XXX..', '.XXXXX.', 'XXXXXXX'] },
-    { ring: [{ n: 14, r: 1, speed: 0.3, stones: [0, 7] }, { n: 7, r: 0.5, speed: -0.5, stones: [3] }] },
+    { rows: ['X.X.X.X', 'X.X.X.X', 'X.X.X.X', 'X.X.X.X'], move: 'drift' },
+    // 13-18: more stones, faster movement
+    { rows: ['XSXXXSX', 'XXXXXXX', 'XSXXXSX', 'XXXXXXX'], move: 'bob' },
     { rows: ['XX.S.XX', 'XX.X.XX', 'XX.S.XX', 'XX.X.XX', 'XX.S.XX'] },
-    { rows: ['X.X.X.X', 'S.X.X.S', 'X.X.X.X', 'X.S.S.X'], move: 'drift' },
+    { ring: [{ n: 14, r: 1, speed: 0.3, stones: [0, 7] }, { n: 7, r: 0.5, speed: -0.5, stones: [3] }] },
     { rows: ['SXXXXXS', 'X.....X', 'X.SSS.X', 'X.....X', 'SXXXXXS'] },
+    { rows: ['X.X.X.X', 'S.X.X.S', 'X.X.X.X', 'X.S.S.X'], move: 'drift' },
     { rows: ['..XXX..', '.SXXXS.', '..XSX..', '.XXXXX.', '..SSS..'], move: 'wave' },
+    // 19-24: the hard ones
     { ring: [{ n: 16, r: 1, speed: -0.4, stones: [0, 4, 8, 12] }] },
     { rows: ['XXXXXXX', 'XSXSXSX', 'XXXXXXX', 'XSXSXSX', 'XXXXXXX'] },
+    { rows: ['SXXSXXS', 'XXSXSXX', 'XSXXXSX', 'SXXSXXS'], move: 'bob' },
     { rows: ['XSXSXSX', 'S.....S', 'XSXSXSX', 'S.....S'], move: 'drift' },
-    { rows: ['...S...', '..SXS..', '.SXXXS.', 'SXXXXXS', 'XXSSSXX', 'XXXXXXX'] },
     { ring: [{ n: 14, r: 1, speed: 0.45, stones: [0, 3, 7, 10] }, { n: 8, r: 0.5, speed: -0.7, stones: [0, 4] }] },
+    { rows: ['...S...', '..SXS..', '.SXXXS.', 'SXXXXXS', 'XXSSSXX', 'XXXXXXX'] },
     { rows: ['SSSSSSS', 'XXXXXXX', 'SXSXSXS', 'XXXXXXX', 'SSSSSSS', 'XXXXXXX'] }
   ];
   const STONE_COLOR = '#a7b0ba';
@@ -55,7 +64,7 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '9 (2026-10-19)';
+  const VERSION = '10 (2026-10-19)';
   const FROG_SCALE = 0.56; // size of the frog relative to the first version (1 = the big one) // shown in the hidden menu; raise with every upload
 
   // ---------------------------------------------------------------- storage
@@ -238,6 +247,7 @@
       } else {
         placeBrick(b);
         if (b.move === 'wave') b.x += Math.sin(t * 0.9 + b.row * 1.1) * step;
+        else if (b.move === 'bob') b.y += Math.sin(t * 1.3 + b.col * 0.9) * L.bh * 0.9; // columns up and down
         else if (b.move === 'drift') {
           const dir = b.row % 2 ? -1 : 1, v = step * 0.45; // one brick width every ~2 s
           b.x = ((b.x + dir * v * t + L.bw) % period + period) % period - L.bw;
@@ -574,19 +584,23 @@
       o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
     } catch (e) { /* ignore */ }
   }
-  // A short puff of filtered noise (for the avocado splat).
+  // A quarter second of fading noise, made once.
   let noiseBuf = null;
+  function noiseBuffer() {
+    if (!noiseBuf) {
+      const n = Math.floor(AC.sampleRate * 0.25);
+      noiseBuf = AC.createBuffer(1, n, AC.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
+    }
+    return noiseBuf;
+  }
+  // A short puff of filtered noise (for the avocado splat).
   function puff(vol, cutoff, dur, when) {
     if (!AC || !settings.sound) return;
     try {
-      if (!noiseBuf) {
-        const n = Math.floor(AC.sampleRate * 0.25);
-        noiseBuf = AC.createBuffer(1, n, AC.sampleRate);
-        const d = noiseBuf.getChannelData(0);
-        for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
-      }
       const t = AC.currentTime + (when || 0);
-      const src = AC.createBufferSource(); src.buffer = noiseBuf;
+      const src = AC.createBufferSource(); src.buffer = noiseBuffer();
       const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
       const g = AC.createGain();
       g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -595,16 +609,15 @@
   }
   const vary = (f, semis) => f * 2 ** ((Math.random() * 2 - 1) * (semis || 0.5) / 12);
 
-  // --- music: a cheerful loop in C major (C, G, A minor, F; 2 s each, 120 bpm): a soft pad,
-  // a bouncy bass (root and octave on alternate beats), and a plucked melody from the major
-  // pentatonic scale that mostly moves by steps, with a little echo. Plays while the game is
-  // open, stops while the page is hidden, and steps back for the jingles.
-  const MUSIC_BAR = 2, MUSIC_AHEAD = 1.5, MUSIC_VOLUME = 0.035;
+  // --- music: a festive loop in C major at 132 bpm, "oom-pah" style: bass on beats 1 and 3,
+  // short chord stabs on 2 and 4, a shaker on every eighth, a soft pad underneath, and a
+  // lively melody from the major pentatonic scale with a little echo. Eight bars of C, G,
+  // A minor, F, then C, F, G, C. Plays while the game is open, stops while the page is hidden,
+  // and steps back for the jingles.
+  const MUSIC_BAR = 60 / 132 * 4, MUSIC_AHEAD = 1.5, MUSIC_VOLUME = 0.035;
   const MUSIC_CHORDS = [ // MIDI note numbers (69 = A4, 440 Hz)
-    { pad: [60, 64, 67], bass: 36 },
-    { pad: [59, 62, 67], bass: 31 },
-    { pad: [57, 60, 64], bass: 33 },
-    { pad: [57, 60, 65], bass: 29 }
+    { pad: [60, 64, 67], bass: 36 }, { pad: [59, 62, 67], bass: 31 }, { pad: [57, 60, 64], bass: 33 }, { pad: [57, 60, 65], bass: 29 },
+    { pad: [60, 64, 67], bass: 36 }, { pad: [57, 60, 65], bass: 29 }, { pad: [59, 62, 67], bass: 31 }, { pad: [60, 64, 67], bass: 36 }
   ];
   const MELODY = [72, 74, 76, 79, 81, 84, 86, 88]; // C major pentatonic, two octaves
   let melodyIdx = 2;
@@ -621,21 +634,32 @@
     o.connect(g); dests.forEach(d => g.connect(d));
     o.start(at); o.stop(at + attack + hold + release + 0.05);
   }
+  // A shaker tick: a short burst of band-passed noise straight into the music's volume.
+  function musicTick(at, vol) {
+    const src = AC.createBufferSource(); src.buffer = noiseBuffer();
+    const f = AC.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = 1.2;
+    const g = AC.createGain();
+    g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.06);
+    src.connect(f); f.connect(g); g.connect(music.gain); src.start(at); src.stop(at + 0.07);
+  }
   function playBar(n, t) {
     const chord = MUSIC_CHORDS[n % MUSIC_CHORDS.length], beat = MUSIC_BAR / 4;
-    chord.pad.forEach(p => {
-      musicNote([music.filter], midiHz(p), 'triangle', t, 0.15, MUSIC_BAR - 0.4, 0.5, 0.09);
-      musicNote([music.filter], midiHz(p), 'sine', t, 0.15, MUSIC_BAR - 0.4, 0.5, 0.07, 5);
-    });
-    // bass: root, octave, root, octave — the bounce
-    for (let i = 0; i < 4; i++) musicNote([music.filter], midiHz(chord.bass + (i % 2) * 12), 'triangle', t + i * beat, 0.01, 0.12, 0.2, 0.28);
-    // melody: eighth notes, mostly steps up or down, sometimes a rest
+    // soft pad underneath
+    chord.pad.forEach(p => musicNote([music.filter], midiHz(p), 'sine', t, 0.1, MUSIC_BAR - 0.3, 0.3, 0.05));
+    // oom (bass, beats 1 and 3) ... pah (chord stabs, beats 2 and 4)
+    [0, 2].forEach(i => musicNote([music.filter], midiHz(chord.bass + (i ? 7 : 0)), 'triangle', t + i * beat, 0.01, 0.12, 0.18, 0.32));
+    [1, 3].forEach(i => chord.pad.forEach(p => musicNote([music.filter], midiHz(p), 'triangle', t + i * beat, 0.01, 0.06, 0.12, 0.11)));
+    // shaker: every eighth, louder on the off-beats
+    for (let i = 0; i < 8; i++) musicTick(t + i * beat / 2, i % 2 ? 0.12 : 0.06);
+    // melody: eighth notes, mostly steps, a leap now and then, an occasional rest; the last bar
+    // of every eight lands on the root
     for (let i = 0; i < 8; i++) {
-      if (Math.random() < 0.25) continue;
-      const step = Math.random() < 0.15 ? (Math.random() < 0.5 ? -2 : 2) : (Math.random() < 0.5 ? -1 : 1);
+      if (Math.random() < 0.15) continue;
+      const step = Math.random() < 0.2 ? (Math.random() < 0.5 ? -2 : 3) : (Math.random() < 0.55 ? 1 : -1);
       melodyIdx = clamp(melodyIdx + step, 0, MELODY.length - 1);
-      const vol = i % 2 === 0 ? 0.22 : 0.14; // on-beat notes a little louder
-      musicNote([music.filter, music.echo], midiHz(MELODY[melodyIdx]), 'triangle', t + i * beat / 2, 0.01, 0.06, 0.35, vol);
+      if (n % 8 === 7 && i >= 6) melodyIdx = 5; // C
+      const vol = i % 2 === 0 ? 0.24 : 0.15;
+      musicNote([music.filter, music.echo], midiHz(MELODY[melodyIdx]), 'triangle', t + i * beat / 2, 0.01, 0.05, 0.3, vol);
     }
   }
   function scheduleMusic() {
@@ -651,7 +675,7 @@
       const t = AC.currentTime;
       const gain = AC.createGain(); gain.gain.setValueAtTime(0, t); gain.gain.linearRampToValueAtTime(MUSIC_VOLUME, t + 1.5);
       const duck = AC.createGain(); duck.gain.value = 1;
-      const filter = AC.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 2200; filter.Q.value = 0.5;
+      const filter = AC.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 3000; filter.Q.value = 0.5;
       const echo = AC.createDelay(1); echo.delayTime.value = MUSIC_BAR * 3 / 8; // dotted eighth
       const feedback = AC.createGain(); feedback.gain.value = 0.3;
       const wet = AC.createGain(); wet.gain.value = 0.25;
@@ -759,9 +783,11 @@
   }
 
   function magnetAssist(b, dt, sp) {
-    // Magnet paddle: a ball coming down in the lower half is pulled toward the paddle.
+    // Magnet paddle: a ball coming down in the lower half is pulled toward the paddle — toward
+    // the nearest part of it, not its middle, so a hit near an end still sends the ball out at an angle.
     if (!(power && power.type === 'multi') || b.vy <= 0 || b.y < H * 0.45) return;
-    turnToward(b, paddle.x, L.paddleY, 2.2 * dt, sp);
+    const half = paddle.w / 2 - b.r * 0.8;
+    turnToward(b, clamp(b.x, paddle.x - half, paddle.x + half), L.paddleY, 2.2 * dt, sp);
   }
 
   function stepBalls(dt) {
