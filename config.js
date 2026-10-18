@@ -13,7 +13,9 @@ window.GAME_CONFIG = {
     tapToContinue: 'Toca para seguir',
     revealedCount: 'Fotos descubiertas: {n}',
     wellDone: ['¡Lo lograste!', '¡Qué bien!', '¡Precioso!', '¡Excelente!', '¡Muy bien hecho!'],
-    cheers: ['¡Muy bien!', '¡Eso es!', '¡Qué bueno!', '¡Sigue así!', '¡Excelente!'],
+    cheers: ['¡Muy bien!', '¡Eso es!', '¡Qué bueno!', '¡Sigue así!', '¡Excelente!', '¡Vamos, {nick}!', '¡Así se hace, {nick}!'],
+    nick: 'Abu',                                   // short name used in the cheers
+    startCheers: ['¡Vamos, {nick}!', '¡Tú puedes, {nick}!', '¡A jugar, {nick}!'],
     powerMulti: '¡Bolas imán!',
     powerFire: '¡Bola de fuego!',
     powerHero: '¡Súper {name}!',     // {name} = file name in the caras folder

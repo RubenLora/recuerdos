@@ -6,7 +6,7 @@
     hello: '¡Hola, {name}!', play: 'Jugar', tapToLaunch: 'Toca para lanzar',
     moveHint: '← Mueve el dedo →', next: 'Siguiente', tapToContinue: 'Toca para seguir',
     revealedCount: 'Fotos descubiertas: {n}',
-    wellDone: ['¡Lo lograste!'], cheers: ['¡Muy bien!'],
+    wellDone: ['¡Lo lograste!'], cheers: ['¡Muy bien!'], startCheers: ['¡Vamos, {nick}!'], nick: 'Abu',
     powerMulti: '¡Bolas imán!', powerFire: '¡Bola de fuego!', powerHero: '¡Súper {name}!',
     powerHeroNoName: '¡Súper héroe!', powerFrog: '¡La rana!', powerCannon: '¡Cañón de aguacates!'
   }, CFG.text || {});
@@ -20,27 +20,43 @@
   const COLORS = ['#ff7a59', '#ffb547', '#ffd84d', '#5ed6a0', '#4fb3ff', '#a88bff'];
   const SCALE = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99];
   const COLS = 7;
-  // X = normal brick (one hit). S = stone brick (two hits: the first one cracks it).
-  const PATTERNS = [
-    ['XXXXXXX', 'XXXXXXX', 'XXXXXXX'],
-    ['.XX.XX.', 'XXXXXXX', 'XXSXSXX', '.XXXXX.', '..XXX..', '...X...'],
-    ['...S...', '..XXX..', '.XXXXX.', 'XXXXXXX', 'XXXXXXX'],
-    ['XXXXXXX', 'XSXXXSX', 'XXXXXXX', 'XXXXXXX'],
-    ['..XXX..', '.XXXXX.', 'XXSSSXX', '.XXXXX.', '..XXX..'],
-    ['X.X.X.X', '.S.S.S.', 'X.X.X.X', '.X.X.X.', 'X.X.X.X'],
-    ['XXXXXXX', '.XXXXX.', '..SSS..', '..XXX..', '.XXXXX.', 'XXXXXXX'],
-    ['XX.S.XX', 'XX.X.XX', 'XX.S.XX', 'XX.X.XX', 'XX.S.XX'],
-    ['SXXXXXS', 'X.....X', 'X.SSS.X', 'X.....X', 'SXXXXXS'],
-    ['XXXXXXX', 'XSXSXSX', 'XXXXXXX', 'XSXSXSX', 'XXXXXXX']
+  // Levels, in order. X = normal brick (one hit). S = stone brick (two hits: the first cracks it).
+  // rows: a fixed layout on a 7-column grid. move: 'wave' = rows slide left and right;
+  // 'drift' = rows travel sideways and wrap around. ring: bricks on turning circles
+  // (n bricks, r = size relative to the biggest circle, speed in turns per 10 s; negative = the
+  // other way, stones = which bricks are stone). After the last level they repeat, harder:
+  // more stone bricks and faster circles.
+  const LEVELS = [
+    { rows: ['XXXXXXX', 'XXXXXXX', 'XXXXXXX'] },
+    { rows: ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'] },
+    { rows: ['...S...', '..XXX..', '.XXXXX.', 'XXXXXXX', 'XXXXXXX'] },
+    { rows: ['XXXXXXX', 'XSXXXSX', 'XXXXXXX', 'XXXXXXX'] },
+    { ring: [{ n: 12, r: 1, speed: 0.35, stones: [0, 6] }] },
+    { rows: ['..XXX..', '.XXXXX.', 'XXSSSXX', '.XXXXX.', '..XXX..'] },
+    { rows: ['.XXXXX.', '.XSXSX.', '.XXXXX.', '.XSXSX.'], move: 'wave' },
+    { rows: ['X.X.X.X', '.S.S.S.', 'X.X.X.X', '.X.X.X.', 'X.X.X.X'] },
+    { rows: ['XXXXXXX', '.XXXXX.', '..SSS..', '..XXX..', '.XXXXX.', 'XXXXXXX'] },
+    { ring: [{ n: 14, r: 1, speed: 0.3, stones: [0, 7] }, { n: 7, r: 0.5, speed: -0.5, stones: [3] }] },
+    { rows: ['XX.S.XX', 'XX.X.XX', 'XX.S.XX', 'XX.X.XX', 'XX.S.XX'] },
+    { rows: ['X.X.X.X', 'S.X.X.S', 'X.X.X.X', 'X.S.S.X'], move: 'drift' },
+    { rows: ['SXXXXXS', 'X.....X', 'X.SSS.X', 'X.....X', 'SXXXXXS'] },
+    { rows: ['..XXX..', '.SXXXS.', '..XSX..', '.XXXXX.', '..SSS..'], move: 'wave' },
+    { ring: [{ n: 16, r: 1, speed: -0.4, stones: [0, 4, 8, 12] }] },
+    { rows: ['XXXXXXX', 'XSXSXSX', 'XXXXXXX', 'XSXSXSX', 'XXXXXXX'] },
+    { rows: ['XSXSXSX', 'S.....S', 'XSXSXSX', 'S.....S'], move: 'drift' },
+    { rows: ['...S...', '..SXS..', '.SXXXS.', 'SXXXXXS', 'XXSSSXX', 'XXXXXXX'] },
+    { ring: [{ n: 14, r: 1, speed: 0.45, stones: [0, 3, 7, 10] }, { n: 8, r: 0.5, speed: -0.7, stones: [0, 4] }] },
+    { rows: ['SSSSSSS', 'XXXXXXX', 'SXSXSXS', 'XXXXXXX', 'SSSSSSS', 'XXXXXXX'] }
   ];
   const STONE_COLOR = '#a7b0ba';
+  let levelTime = 0; // seconds since the level started (moves the moving bricks)
   // Power-ups ("sorpresas"). None of them needs faster hands: capsules drift to the
   // paddle by themselves, extra balls are pulled to the paddle, the hero and the frog
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '8 (2026-10-19)';
-  const FROG_SCALE = 0.4; // size of the frog relative to the first version (1 = the big one) // shown in the hidden menu; raise with every upload
+  const VERSION = '9 (2026-10-19)';
+  const FROG_SCALE = 0.56; // size of the frog relative to the first version (1 = the big one) // shown in the hidden menu; raise with every upload
 
   // ---------------------------------------------------------------- storage
   const store = {
@@ -199,7 +215,7 @@
     L.ballR = clamp(W * 0.034, 10, 22);
     L.netY = H * 0.94;
     L.panelTop = L.panelTop || H * 0.62;
-    bricks.forEach(placeBrick);
+    moveBricks(levelTime);
     balls.forEach(b => { b.r = L.ballR; });
   }
 
@@ -208,6 +224,29 @@
     b.y = L.top + b.row * (L.bh + L.gap);
     b.w = L.bw; b.h = L.bh;
   }
+
+  // Puts every brick where it is at time t (fixed bricks don't move; wave/drift rows and rings do).
+  function moveBricks(t) {
+    const Rmax = Math.min(W * 0.4 - L.bw / 2, H * 0.22), ringCy = L.top + L.bh + Rmax;
+    const step = L.bw + L.gap, period = W + step;
+    for (const b of bricks) {
+      b.w = L.bw; b.h = L.bh;
+      if (b.ring) {
+        const a = b.ring.a0 + t * b.ring.speed * Math.PI * 2 / 10, R = Rmax * b.ring.r;
+        b.x = W / 2 + Math.cos(a) * R - L.bw / 2;
+        b.y = ringCy + Math.sin(a) * R - L.bh / 2;
+      } else {
+        placeBrick(b);
+        if (b.move === 'wave') b.x += Math.sin(t * 0.9 + b.row * 1.1) * step;
+        else if (b.move === 'drift') {
+          const dir = b.row % 2 ? -1 : 1, v = step * 0.45; // one brick width every ~2 s
+          b.x = ((b.x + dir * v * t + L.bw) % period + period) % period - L.bw;
+        }
+      }
+    }
+  }
+  // Which of the 7 columns a brick is over right now (moving bricks included).
+  const brickCol = b => clamp(Math.round((b.x + b.w / 2 - L.side - L.bw / 2) / (L.bw + L.gap)), 0, COLS - 1);
 
   // ---------------------------------------------------------------- game state
   let state = 'boot'; // boot | title | ready | play | missed | clearing | complete | paused
@@ -242,19 +281,34 @@
 
   function paddleWidth() { return Math.min(W * 0.55, W * ((PADDLES[settings.paddle] || 0.34) + progress.adapt.paddle)); }
   function currentSpeed() {
-    const lvl = 1 + Math.min(progress.level, 10) * 0.025;
+    const lvl = 1 + Math.min(progress.level, 16) * 0.025; // up to +40% by level 17
     return H * (SPEEDS[settings.speed] || 0.4) * lvl * progress.adapt.speed;
   }
 
   function buildBricks() {
-    const pat = PATTERNS[progress.level % PATTERNS.length];
+    const def = LEVELS[progress.level % LEVELS.length];
+    const cycle = Math.floor(progress.level / LEVELS.length); // 0 the first time through, then harder
+    const extraStone = Math.min(0.5, cycle * 0.2); // share of normal bricks that turn to stone
+    const mkBrick = (stone, color, extra) => {
+      if (!stone && extraStone > 0 && Math.random() < extraStone) stone = true;
+      return Object.assign({ color: stone ? STONE_COLOR : color, alive: true, held: false, stone, hp: stone ? 2 : 1 }, extra);
+    };
     bricks = [];
-    pat.forEach((row, ri) => [...row].forEach((ch, ci) => {
-      if (ch !== 'X' && ch !== 'S') return;
-      const stone = ch === 'S';
-      const b = { row: ri, col: ci, color: stone ? STONE_COLOR : COLORS[ri % COLORS.length], alive: true, held: false, stone, hp: stone ? 2 : 1 };
-      placeBrick(b); bricks.push(b);
-    }));
+    if (def.rows) {
+      def.rows.forEach((row, ri) => [...row].forEach((ch, ci) => {
+        if (ch !== 'X' && ch !== 'S') return;
+        bricks.push(mkBrick(ch === 'S', COLORS[ri % COLORS.length], { row: ri, col: ci, move: def.move || null }));
+      }));
+    }
+    if (def.ring) {
+      def.ring.forEach((rg, k) => {
+        for (let i = 0; i < rg.n; i++) {
+          bricks.push(mkBrick(rg.stones.includes(i), COLORS[(k * 2 + i) % COLORS.length],
+            { row: k, col: 0, ring: { a0: i * Math.PI * 2 / rg.n, r: rg.r, speed: rg.speed * (1 + cycle * 0.25) } }));
+        }
+      });
+    }
+    levelTime = 0; moveBricks(0);
     total = bricks.length; destroyed = 0; reveal = 0; revealShown = 0; cheersGiven = 0;
     dying = []; particles = []; floaters = []; confetti = []; ghosts = []; balloons = [];
     capsules = []; power = null; hero = null; frog = null; avocados = []; sinceCapsule = 0;
@@ -274,6 +328,7 @@
     b.vx = Math.sin(a) * sp; b.vy = -Math.cos(a) * sp;
     sinceBrick = 0; noteIdx = 0; showMoveHint = false;
     sfx.launch();
+    if (destroyed === 0 && !floaters.length) floaters.push({ text: fmt(pick(T.startCheers), { nick: T.nick }), t: 0, dur: 1.8 });
     setState('play');
   }
 
@@ -812,7 +867,7 @@
     if (destroyed === total) { levelClear(); return; }
     const frac = destroyed / total;
     if (cheersGiven < 2 && frac >= (cheersGiven + 1) / 3) {
-      cheersGiven++; floaters.push({ text: pick(T.cheers), t: 0, dur: 1.8 }); sfx.cheer();
+      cheersGiven++; floaters.push({ text: fmt(pick(T.cheers), { nick: T.nick }), t: 0, dur: 1.8 }); sfx.cheer();
     }
     maybeDropCapsule(k);
   }
@@ -887,7 +942,16 @@
     if (!forced && (sinceCapsule < 2 || Math.random() > 0.7)) return;
     sinceCapsule = 0;
     const type = forced ? DEBUG_POWER : nextPowerType();
-    capsules.push({ x: k.x + k.w / 2, y: k.y + k.h / 2, type, t: 0, face: type === 'hero' ? (faces.length ? pick(faces) : null) : null });
+    capsules.push({ x: k.x + k.w / 2, y: k.y + k.h / 2, type, t: 0, face: type === 'hero' ? (faces.length ? pick(facesForPhoto()) : null) : null });
+  }
+
+  // The heroes that fit the photo behind the bricks: the grandchildren named in its caption.
+  // If the caption names none of them, any grandchild can come.
+  const plain = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  function facesForPhoto() {
+    const cap = ' ' + plain(currentPhoto && currentPhoto.caption).replace(/[^a-z0-9]+/g, ' ') + ' ';
+    const named = faces.filter(f => f.name && cap.includes(' ' + plain(f.name).replace(/[^a-z0-9]+/g, ' ') + ' '));
+    return named.length ? named : faces;
   }
 
   function stepCapsules(dt) {
@@ -992,7 +1056,7 @@
   // --- hero: a grandchild (photo head, cartoon body) flies up through the bricks
   function startHero(face) {
     const counts = new Array(COLS).fill(0);
-    alive().forEach(k => { counts[k.col]++; });
+    alive().forEach(k => { counts[brickCol(k)]++; });
     let best = 0;
     for (let c = 1; c < COLS; c++) if (counts[c] > counts[best]) best = c;
     const h = clamp(W * 0.3, 90, 170);
@@ -1075,6 +1139,7 @@
     netFlash = Math.max(0, netFlash - dt);
     revealShown += (reveal - revealShown) * Math.min(1, dt * (state === 'clearing' ? 1.4 : 3));
 
+    if (state === 'play' || state === 'ready') { levelTime += dt; moveBricks(levelTime); }
     if (state === 'ready' || state === 'title') {
       const b = balls[0];
       b.x = paddle.x; b.y = L.paddleY - L.paddleH / 2 - b.r - 1;
@@ -1093,7 +1158,8 @@
     dying.forEach(d => { d.t += dt; }); dying = dying.filter(d => d.t < 0.3);
     particles.forEach(p => { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += H * 1.2 * dt; });
     particles = particles.filter(p => p.t < p.life);
-    floaters.forEach(f => { f.t += dt; }); floaters = floaters.filter(f => f.t < f.dur);
+    // Messages show one at a time, in order (so two never sit on top of each other).
+    if (floaters.length) { floaters[0].t += dt; if (floaters[0].t >= floaters[0].dur) floaters.shift(); }
     ghosts.forEach(g => { g.t += dt; }); ghosts = ghosts.filter(g => g.t < 0.6);
     confetti.forEach(c => { c.t += dt; c.y += c.vy * dt; c.x += Math.sin(c.ph + c.t * 1.5) * c.sway * dt * 10; c.rot += (c.vr || 0) * dt; });
     confetti = confetti.filter(c => c.t < c.life && c.y < H + 40);
@@ -1232,8 +1298,8 @@
 
   function drawHero() {
     if (!hero) return;
-    // Big head, small body (more comical): the head keeps its size, the body is 60% of it.
-    const h = hero.h, hu = h / 10, u = hu * 0.6, headR = 1.7 * hu;
+    // Big head, short body (more comical): the head keeps its size, the body is 45% of it.
+    const h = hero.h, hu = h / 10, u = hu * 0.45, headR = 1.7 * hu;
     const fly = hero.phase === 'fly';
     const pop = hero.phase === 'stand' ? Math.min(1, hero.t / 0.35) : 1;
     ctx.save();
@@ -1260,8 +1326,8 @@
     ctx.beginPath(); ctx.ellipse(-0.8 * u, -0.3 * u, 1.0 * u, 0.5 * u, 0, 0, Math.PI * 2); ctx.fill();
     if (fly) { ctx.beginPath(); ctx.ellipse(1.1 * u, -0.9 * u, 1.0 * u, 0.5 * u, -0.6, 0, Math.PI * 2); ctx.fill(); }
     else { ctx.beginPath(); ctx.ellipse(0.8 * u, -0.3 * u, 1.0 * u, 0.5 * u, 0, 0, Math.PI * 2); ctx.fill(); }
-    // torso
-    ctx.fillStyle = shirt; rr(-1.6 * u, -7 * u, 3.2 * u, 3.8 * u, 0.9 * u); ctx.fill();
+    // torso (a little wider than tall-ish, for the chubby look)
+    ctx.fillStyle = shirt; rr(-1.9 * u, -7 * u, 3.8 * u, 3.8 * u, 1.0 * u); ctx.fill();
     ctx.fillStyle = '#ffd84d'; ctx.beginPath(); ctx.arc(0, -5.3 * u, 0.65 * u, 0, Math.PI * 2); ctx.fill(); // emblem
     // arms
     ctx.strokeStyle = shirt; ctx.lineWidth = 1.0 * u;
@@ -1502,10 +1568,14 @@
       text(T.tapToLaunch, W / 2, L.paddleY - H * 0.13, Math.min(W * 0.085, 42), pulse);
       if (showMoveHint) text(T.moveHint, W / 2, L.paddleY + H * 0.09, Math.min(W * 0.065, 32), 0.9);
     }
-    floaters.forEach(f => {
-      const k = f.t / f.dur, pop = Math.min(1, f.t / 0.25);
-      text(f.text, W / 2, H * 0.58 - k * H * 0.06, Math.min(W * 0.13, 70) * (0.7 + 0.3 * pop), Math.min(1, (1 - k) * 2.5));
-    });
+    if (floaters.length) {
+      const f = floaters[0], k = f.t / f.dur, pop = Math.min(1, f.t / 0.25);
+      let size = Math.min(W * 0.13, 70);
+      ctx.font = `800 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+      const tw = ctx.measureText(f.text).width;
+      if (tw > W * 0.92) size *= W * 0.92 / tw; // long messages shrink to fit the screen
+      text(f.text, W / 2, H * 0.58 - k * H * 0.06, size * (0.7 + 0.3 * pop), Math.min(1, (1 - k) * 2.5));
+    }
     drawBalloons();
     drawConfetti();
   }
