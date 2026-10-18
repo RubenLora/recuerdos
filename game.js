@@ -64,7 +64,7 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '10 (2026-10-19)';
+  const VERSION = '11 (2026-10-19)';
   const FROG_SCALE = 0.56; // size of the frog relative to the first version (1 = the big one) // shown in the hidden menu; raise with every upload
 
   // ---------------------------------------------------------------- storage
@@ -552,7 +552,7 @@
     if (AC) { if (AC.state === 'suspended') AC.resume(); startMusic(); return; }
     try {
       AC = new (window.AudioContext || window.webkitAudioContext)();
-      master = AC.createGain(); master.gain.value = 0.6;
+      master = AC.createGain(); master.gain.value = 0.85;
       const comp = AC.createDynamicsCompressor();
       master.connect(comp); comp.connect(AC.destination);
       startMusic();
@@ -595,13 +595,15 @@
     }
     return noiseBuf;
   }
-  // A short puff of filtered noise (for the avocado splat).
-  function puff(vol, cutoff, dur, when) {
+  // A short burst of filtered noise. Low cutoff = a thud or a splat; type 'highpass' = a click
+  // or a crack. Every strong effect below is layered the way game sound designers do it: a
+  // sharp click (transient), a tone (body), a low thump (weight) and a short tail.
+  function puff(vol, cutoff, dur, when, type) {
     if (!AC || !settings.sound) return;
     try {
       const t = AC.currentTime + (when || 0);
       const src = AC.createBufferSource(); src.buffer = noiseBuffer();
-      const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
+      const f = AC.createBiquadFilter(); f.type = type || 'lowpass'; f.frequency.value = cutoff;
       const g = AC.createGain();
       g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       src.connect(f); f.connect(g); g.connect(master); src.start(t); src.stop(t + dur);
@@ -614,7 +616,7 @@
   // lively melody from the major pentatonic scale with a little echo. Eight bars of C, G,
   // A minor, F, then C, F, G, C. Plays while the game is open, stops while the page is hidden,
   // and steps back for the jingles.
-  const MUSIC_BAR = 60 / 132 * 4, MUSIC_AHEAD = 1.5, MUSIC_VOLUME = 0.035;
+  const MUSIC_BAR = 60 / 132 * 4, MUSIC_AHEAD = 1.5, MUSIC_VOLUME = 0.045;
   const MUSIC_CHORDS = [ // MIDI note numbers (69 = A4, 440 Hz)
     { pad: [60, 64, 67], bass: 36 }, { pad: [59, 62, 67], bass: 31 }, { pad: [57, 60, 64], bass: 33 }, { pad: [57, 60, 65], bass: 29 },
     { pad: [60, 64, 67], bass: 36 }, { pad: [57, 60, 65], bass: 29 }, { pad: [59, 62, 67], bass: 31 }, { pad: [60, 64, 67], bass: 36 }
@@ -634,13 +636,20 @@
     o.connect(g); dests.forEach(d => g.connect(d));
     o.start(at); o.stop(at + attack + hold + release + 0.05);
   }
-  // A shaker tick: a short burst of band-passed noise straight into the music's volume.
-  function musicTick(at, vol) {
+  // Percussion straight into the music's volume: a shaker tick (band-passed noise), a kick
+  // (a sine dropping fast) and a snare (noise around 1.8 kHz).
+  function musicTick(at, vol, freq, dur) {
     const src = AC.createBufferSource(); src.buffer = noiseBuffer();
-    const f = AC.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = 1.2;
+    const f = AC.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq || 2600; f.Q.value = 1.2;
     const g = AC.createGain();
-    g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.06);
-    src.connect(f); f.connect(g); g.connect(music.gain); src.start(at); src.stop(at + 0.07);
+    g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.0001, at + (dur || 0.06));
+    src.connect(f); f.connect(g); g.connect(music.gain); src.start(at); src.stop(at + (dur || 0.06) + 0.01);
+  }
+  function musicKick(at, vol) {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(150, at); o.frequency.exponentialRampToValueAtTime(45, at + 0.12);
+    g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.18);
+    o.connect(g); g.connect(music.gain); o.start(at); o.stop(at + 0.2);
   }
   function playBar(n, t) {
     const chord = MUSIC_CHORDS[n % MUSIC_CHORDS.length], beat = MUSIC_BAR / 4;
@@ -649,7 +658,9 @@
     // oom (bass, beats 1 and 3) ... pah (chord stabs, beats 2 and 4)
     [0, 2].forEach(i => musicNote([music.filter], midiHz(chord.bass + (i ? 7 : 0)), 'triangle', t + i * beat, 0.01, 0.12, 0.18, 0.32));
     [1, 3].forEach(i => chord.pad.forEach(p => musicNote([music.filter], midiHz(p), 'triangle', t + i * beat, 0.01, 0.06, 0.12, 0.11)));
-    // shaker: every eighth, louder on the off-beats
+    // drums: kick on 1 and 3, snare on 2 and 4, shaker on every eighth (louder off the beat)
+    [0, 2].forEach(i => musicKick(t + i * beat, 0.9));
+    [1, 3].forEach(i => musicTick(t + i * beat, 0.5, 1800, 0.12));
     for (let i = 0; i < 8; i++) musicTick(t + i * beat / 2, i % 2 ? 0.12 : 0.06);
     // melody: eighth notes, mostly steps, a leap now and then, an occasional rest; the last bar
     // of every eight lands on the root
@@ -712,29 +723,56 @@
     tone(freq * 2, 0.35, 'sine', vol * 0.22, when);
     tone(freq * 3, 0.18, 'triangle', vol * 0.06, when);
   }
-  let lastWall = -Infinity;
+  let lastWall = -Infinity, smashNo = 0;
+  const click = (vol, when) => puff(vol, 3000, 0.03, when, 'highpass'); // the transient
+  const thump = (vol, when) => glide(130, 60, 0.12, 'sine', vol, when);  // the weight
   const sfx = {
-    brick() { bell(SCALE[Math.min(noteIdx, SCALE.length - 1)]); noteIdx++; },
-    // The paddle: G4 in the middle, A4 further out, C5 at the ends (in the music's key).
+    // A brick: click + bell note (rising scale while the ball keeps hitting) + thump.
+    brick() { click(0.35); bell(vary(SCALE[Math.min(noteIdx, SCALE.length - 1)], 0.15)); thump(0.3); noteIdx++; },
+    // The paddle: G4 in the middle, A4 further out, C5 at the ends (in the music's key), with a pop.
     paddle(rel) {
       const f = vary(Math.abs(rel) < 1 / 3 ? 392 : Math.abs(rel) < 2 / 3 ? 440 : 523.25, 0.25);
-      tone(f, 0.12, 'triangle', 0.3); tone(f / 2, 0.1, 'sine', 0.18);
+      click(0.3); tone(f, 0.12, 'triangle', 0.4); tone(f / 2, 0.1, 'sine', 0.25); thump(0.35);
     },
-    wall() { const now = performance.now(); if (now - lastWall < 40) return; lastWall = now; tone(vary(260), 0.06, 'triangle', 0.16); },
-    launch() { tone(523.25, 0.1, 'sine', 0.18); tone(783.99, 0.1, 'sine', 0.18, 0.06); },
-    net() { tone(330, 0.2, 'triangle', 0.18); },
-    miss() { glide(330, 220, 0.3, 'triangle', 0.18); glide(660, 440, 0.3, 'sine', 0.06); },
-    cheer() { duckMusic(0.8); bell(523.25, 0, 0.25); bell(659.25, 0.12, 0.25); },
-    power() { duckMusic(0.8); bell(392, 0, 0.3); bell(523.25, 0.1, 0.3); bell(659.25, 0.2, 0.3); },
-    whoosh() { for (let i = 0; i < 6; i++) tone(180 + i * 60, 0.25, 'triangle', 0.08, i * 0.05); },
-    slurp() { glide(250, 520, 0.18, 'sine', 0.22); tone(620, 0.08, 'sine', 0.12, 0.18); },
-    shot() { glide(220, 440, 0.08, 'square', 0.06); puff(0.12, 1200, 0.08); },
-    splat() { glide(180, 70, 0.18, 'sine', 0.25); puff(0.2, 600, 0.15); },
-    crack() { tone(vary(330), 0.08, 'square', 0.08); puff(0.18, 900, 0.1); },
+    wall() { const now = performance.now(); if (now - lastWall < 40) return; lastWall = now; click(0.2); tone(vary(260), 0.07, 'triangle', 0.28); },
+    launch() { click(0.2); tone(523.25, 0.1, 'sine', 0.25); tone(783.99, 0.12, 'sine', 0.25, 0.06); },
+    net() { click(0.2); tone(330, 0.2, 'triangle', 0.28); thump(0.2); },
+    miss() { glide(330, 220, 0.3, 'triangle', 0.28); glide(660, 440, 0.3, 'sine', 0.08); puff(0.2, 500, 0.25, 0.1); },
+    cheer() { duckMusic(0.8); bell(523.25, 0, 0.3); bell(659.25, 0.12, 0.3); bell(783.99, 0.24, 0.3); },
+    // Catching a capsule: a quick rising arpeggio with a sparkle on top.
+    power() {
+      duckMusic(1);
+      [392, 523.25, 659.25, 783.99, 1046.5].forEach((f, i) => { tone(f, 0.18, 'triangle', 0.3, i * 0.06); tone(f, 0.18, 'sine', 0.15, i * 0.06); });
+      for (let i = 0; i < 5; i++) puff(0.12, 4000, 0.05, 0.3 + i * 0.05, 'highpass');
+    },
+    // The hero's entrance: a short brass fanfare ("da-da-da DAAA, da-DAAA") over a drum roll.
+    fanfare() {
+      duckMusic(2.4);
+      const brass = (f, at, dur, vol) => { tone(f, dur, 'sawtooth', vol, at); tone(f / 2, dur, 'triangle', vol * 0.6, at); tone(f * 1.005, dur, 'sawtooth', vol * 0.5, at); };
+      brass(392, 0, 0.14, 0.14); brass(392, 0.16, 0.14, 0.14); brass(392, 0.32, 0.14, 0.14); brass(523.25, 0.48, 0.55, 0.18);
+      brass(659.25, 1.05, 0.14, 0.14); brass(783.99, 1.2, 0.8, 0.2);
+      [523.25, 659.25, 783.99].forEach(f => tone(f, 0.9, 'sine', 0.08, 1.2));
+      for (let i = 0; i < 14; i++) puff(0.12 + i * 0.01, 1500, 0.05, i * 0.035);
+    },
+    // The hero breaking bricks: crash, pum, pam, boom — a different mix each time.
+    smash() {
+      const v = smashNo++ % 4;
+      thump(0.7); glide(90 + v * 20, 35, 0.35, 'sine', 0.6);          // boom
+      puff(0.7, 700 + v * 200, 0.22);                                   // pum
+      puff(0.45, 2200, 0.06, 0, 'highpass');                            // crash
+      tone(vary(180 + v * 40, 1), 0.12, 'square', 0.18);                // pam
+      if (v === 3) puff(0.5, 1200, 0.35, 0.05, 'bandpass');            // extra crash on every 4th
+    },
+    whoosh() { for (let i = 0; i < 6; i++) tone(180 + i * 60, 0.25, 'triangle', 0.12, i * 0.05); puff(0.3, 900, 0.4); },
+    slurp() { glide(250, 520, 0.18, 'sine', 0.3); tone(620, 0.08, 'sine', 0.15, 0.18); click(0.15, 0.18); },
+    shot() { click(0.3); glide(220, 440, 0.08, 'square', 0.1); puff(0.2, 1200, 0.08); },
+    splat() { glide(180, 70, 0.18, 'sine', 0.35); puff(0.35, 600, 0.15); click(0.25); },
+    crack() { click(0.4); tone(vary(330), 0.08, 'square', 0.12); puff(0.3, 900, 0.1); thump(0.3); },
     // Level clear: a fanfare (quick run up to a held high note over a C major chord), then a
     // short happy tune, and a final chord. About 5 s; the music steps back meanwhile.
     win() {
       duckMusic(5);
+      for (let i = 0; i < 8; i++) puff(0.15, 1500, 0.05, i * 0.055); // drum roll
       [392, 523.25, 659.25, 783.99].forEach((f, i) => tone(f, 0.14, 'triangle', 0.3, i * 0.11));
       tone(1046.5, 0.9, 'triangle', 0.3, 0.46); tone(1046.5, 0.9, 'sine', 0.2, 0.46);
       [523.25, 659.25, 783.99].forEach(f => tone(f, 1.0, 'sine', 0.1, 0.46));
@@ -877,18 +915,19 @@
   }
 
   // Removes a brick with all the feedback. `at` = where the particles start (default: the brick).
-  function destroyBrick(k, at) {
+  // `smash` = the hero did it: bigger burst and a crash instead of the bell.
+  function destroyBrick(k, at, smash) {
     if (!k.alive) return;
     k.alive = false; k.held = false; destroyed++; sinceBrick = 0; sinceCapsule++;
     if (!at) dying.push({ b: k, t: 0 });
     const px = at ? at.x : k.x + k.w / 2, py = at ? at.y : k.y + k.h / 2;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < (smash ? 18 : 10); i++) {
       particles.push({
-        x: px, y: py, vx: (Math.random() - 0.5) * W * 0.6,
-        vy: -Math.random() * H * 0.3, s: 4 + Math.random() * 5, c: k.color, t: 0, life: 0.8 + Math.random() * 0.4
+        x: px, y: py, vx: (Math.random() - 0.5) * W * (smash ? 1 : 0.6),
+        vy: -Math.random() * H * (smash ? 0.5 : 0.3), s: 4 + Math.random() * (smash ? 8 : 5), c: k.color, t: 0, life: 0.8 + Math.random() * 0.4
       });
     }
-    sfx.brick(); buzz(15);
+    if (smash) { sfx.smash(); buzz(40); } else { sfx.brick(); buzz(15); }
     reveal = destroyed / total * 0.85;
     if (destroyed === total) { levelClear(); return; }
     const frac = destroyed / total;
@@ -1014,7 +1053,7 @@
       power = { type: 'fire', t: 0, dur: POWER_DUR.fire };
       label = T.powerFire;
     } else if (c.type === 'hero') {
-      startHero(c.face);
+      startHero(c.face); sfx.fanfare();
       label = c.face && c.face.name ? fmt(T.powerHero, { name: c.face.name }) : T.powerHeroNoName;
     } else if (c.type === 'frog') {
       frog = { t: 0, dur: POWER_DUR.frog, tongue: null, since: 0.4, eaten: 0, blink: 0 };
@@ -1103,7 +1142,7 @@
       const top = hero.y - hero.h, half = hero.h * 0.32, hx = hero.x, hy = hero.y;
       for (const k of bricks) {
         if (!k.alive || k.held) continue;
-        if (k.x < hx + half && k.x + k.w > hx - half && k.y + k.h > top && k.y < hy) destroyBrick(k);
+        if (k.x < hx + half && k.x + k.w > hx - half && k.y + k.h > top && k.y < hy) destroyBrick(k, null, true);
         if (!hero) return; // that was the last brick: the level is over
       }
       if (hero.y < -10) hero = null;
@@ -1195,8 +1234,9 @@
 
   // ---------------------------------------------------------------- render
   function rr(x, y, w, h, r) {
-    r = Math.min(r, w / 2, h / 2);
     ctx.beginPath();
+    if (!(w > 0) || !(h > 0)) return; // nothing to draw (e.g. the first frame, before sizes exist)
+    r = Math.min(r, w / 2, h / 2);
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
@@ -1244,22 +1284,57 @@
     drawBrickAt(b.x + (b.w - w) / 2, b.y + (b.h - h) / 2, w, h, b.color, alpha);
   }
 
+  // The paddle gets cooler every six levels: 1 wood, 2 chrome, 3 neon with lights, 4 gold with gems.
+  const paddleTier = () => Math.floor((progress.level % LEVELS.length) / 6);
   function drawPaddle() {
     const sq = paddle.squish * 0.15;
     const w = paddle.w * (1 + sq * 0.3), h = L.paddleH * (1 - sq);
     const x = paddle.x - w / 2, y = L.paddleY - h / 2;
     const magnet = power && power.type === 'multi';
+    const tier = magnet ? -1 : paddleTier(), now = performance.now() / 1000;
+    const looks = [
+      { stops: ['#fff7e0', '#ffc65c'], line: '#3a2410', glow: 'rgba(0,0,0,.5)', blur: 12 },
+      { stops: ['#f4fdff', '#8fd8ea', '#2b8fae', '#5cc3dd'], line: '#0f3d4f', glow: 'rgba(120,220,255,.7)', blur: 16 },
+      { stops: ['#ffd9f7', '#c07dff', '#6a2fb5'], line: '#3a1458', glow: 'rgba(255,120,230,.85)', blur: 20 },
+      { stops: ['#fff6c9', '#ffd23a', '#c8900d', '#ffe27a'], line: '#5a3e00', glow: 'rgba(255,215,90,1)', blur: 24 + 8 * Math.sin(now * 4) }
+    ];
+    const lk = magnet ? { stops: ['#e8f6ff', '#6fc3ff'], line: '#17456b', glow: 'rgba(120,200,255,.9)', blur: 22 } : looks[tier];
     ctx.save();
-    ctx.shadowColor = magnet ? 'rgba(120,200,255,.9)' : 'rgba(0,0,0,.5)'; ctx.shadowBlur = magnet ? 22 : 12; ctx.shadowOffsetY = magnet ? 0 : 4;
+    ctx.shadowColor = lk.glow; ctx.shadowBlur = lk.blur; ctx.shadowOffsetY = tier === 0 ? 4 : 0;
     const g = ctx.createLinearGradient(0, y, 0, y + h);
-    if (magnet) { g.addColorStop(0, '#e8f6ff'); g.addColorStop(1, '#6fc3ff'); }
-    else { g.addColorStop(0, '#fff7e0'); g.addColorStop(1, '#ffc65c'); }
+    lk.stops.forEach((c, i) => g.addColorStop(i / (lk.stops.length - 1), c));
     rr(x, y, w, h, h / 2); ctx.fillStyle = g; ctx.fill();
     ctx.restore();
-    rr(x, y, w, h, h / 2); ctx.lineWidth = 3; ctx.strokeStyle = magnet ? '#17456b' : '#3a2410'; ctx.stroke();
+    rr(x, y, w, h, h / 2); ctx.lineWidth = 3; ctx.strokeStyle = lk.line; ctx.stroke();
     if (magnet) { // red/blue magnet tips
       ctx.fillStyle = '#ff5c5c'; rr(x, y, h * 0.9, h, h / 2); ctx.fill();
       rr(x + w - h * 0.9, y, h * 0.9, h, h / 2); ctx.fill();
+      return;
+    }
+    if (tier === 1) { // chrome: a bright streak and darker metal caps
+      ctx.fillStyle = 'rgba(255,255,255,.7)'; rr(x + h * 0.9, y + h * 0.18, w - h * 1.8, h * 0.16, h * 0.08); ctx.fill();
+      ctx.fillStyle = '#1d6f8c'; rr(x, y, h * 0.8, h, h / 2); ctx.fill(); rr(x + w - h * 0.8, y, h * 0.8, h, h / 2); ctx.fill();
+    } else if (tier === 2) { // neon: running lights along the paddle
+      const n = Math.max(3, Math.floor(w / (h * 1.2)));
+      for (let i = 0; i < n; i++) {
+        const on = (Math.floor(now * 6) + i) % n < 2;
+        ctx.fillStyle = on ? '#fff6ff' : 'rgba(255,255,255,.3)';
+        ctx.beginPath(); ctx.arc(x + h * 0.7 + (w - h * 1.4) * i / (n - 1), y + h / 2, h * 0.14, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (tier === 3) { // gold: three gems and twinkling sparkles
+      [0.25, 0.5, 0.75].forEach((f, i) => {
+        const gx = x + w * f, gy = y + h / 2, r = h * 0.26;
+        ctx.fillStyle = ['#3ea1ff', '#ff4d7a', '#3ee07a'][i];
+        ctx.beginPath(); ctx.arc(gx, gy, r, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#5a3e00'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(gx - r * 0.3, gy - r * 0.3, r * 0.3, 0, Math.PI * 2); ctx.fill();
+      });
+      for (let i = 0; i < 4; i++) {
+        const k = (now * 1.5 + i * 0.37) % 1, sx = x + w * ((i * 0.23 + 0.1 + Math.floor(now * 1.5 + i * 0.37) * 0.31) % 0.9 + 0.05), sy = y - h * 0.3 - k * h * 0.6;
+        const s = h * 0.25 * Math.sin(k * Math.PI);
+        ctx.strokeStyle = '#fffbe0'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(sx - s, sy); ctx.lineTo(sx + s, sy); ctx.moveTo(sx, sy - s); ctx.lineTo(sx, sy + s); ctx.stroke();
+      }
     }
   }
 
@@ -1358,8 +1433,9 @@
     // arms
     ctx.strokeStyle = shirt; ctx.lineWidth = 1.0 * u;
     if (fly) {
-      ctx.beginPath(); ctx.moveTo(1.4 * u, shoulderY); ctx.lineTo(2.4 * u, shoulderY - 4.2 * u); ctx.stroke(); // arm up with fist
-      ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(2.5 * u, shoulderY - 4.7 * u, 0.7 * u, 0, Math.PI * 2); ctx.fill();
+      // arm raised out to the side (diagonal), so the fist shows clearly beside the big head
+      ctx.beginPath(); ctx.moveTo(1.6 * u, shoulderY); ctx.lineTo(headR * 1.25, shoulderY - headR * 0.9); ctx.stroke();
+      ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(headR * 1.32, shoulderY - headR * 1.02, 0.75 * u, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.moveTo(-1.4 * u, shoulderY); ctx.lineTo(-2.0 * u, -3.4 * u); ctx.stroke();
       ctx.beginPath(); ctx.arc(-2.05 * u, -3.1 * u, 0.55 * u, 0, Math.PI * 2); ctx.fill();
     } else {
@@ -1567,6 +1643,7 @@
       return;
     }
     drawBackground();
+    if (state !== 'title' && state !== 'clearing') text(`Nivel ${progress.level + 1}`, W * 0.14, L.top * 0.45, clamp(W * 0.055, 16, 26), 0.85);
     bricks.forEach(b => { if (b.alive && !b.held) { if (b.stone) drawStone(b, 0.96); else drawBrick(b, 1, 0.94); } });
     dying.forEach(d => drawBrick(d.b, 1 + d.t * 1.2, Math.max(0, 1 - d.t / 0.3)));
     particles.forEach(p => {
@@ -1689,11 +1766,12 @@
     if (['ready', 'play', 'missed'].includes(state)) {
       prevState = state; setState('paused');
       $('pause').classList.add('show');
+      stopMusic();
     }
   }
   function resume() {
     $('pause').classList.remove('show');
-    audioInit(); keepAwake();
+    audioInit(); keepAwake(); // audioInit also restarts the music
     if (prevState === 'play') { setState('play'); freeze = 1.0; } // short breather, then the ball goes on
     else resetBall();
   }
