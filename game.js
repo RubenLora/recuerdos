@@ -37,6 +37,7 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10 };
+  const VERSION = '5 (2026-10-19)'; // shown in the hidden menu; raise with every upload
 
   // ---------------------------------------------------------------- storage
   const store = {
@@ -92,8 +93,14 @@
   const fmt = (s, o) => s.replace(/\{(\w+)\}/g, (_, k) => (o[k] != null ? o[k] : ''));
   const srcW = s => s.naturalWidth || s.width;
   const srcH = s => s.naturalHeight || s.height;
+  // Does canvas blur really work here? Safari/iPad accepts `filter` but may ignore it,
+  // so draw a white dot with blur and check that it actually spread.
   const FILTER_OK = (() => {
-    try { const c = mk(2, 2).getContext('2d'); c.filter = 'blur(2px)'; return c.filter === 'blur(2px)'; } catch (e) { return false; }
+    try {
+      const c = mk(9, 9), x = c.getContext('2d');
+      x.filter = 'blur(2px)'; x.fillStyle = '#fff'; x.fillRect(4, 4, 1, 1); x.filter = 'none';
+      return x.getImageData(1, 4, 1, 1).data[3] > 0;
+    } catch (e) { return false; }
   })();
 
   // ---------------------------------------------------------------- encrypted photos
@@ -388,11 +395,25 @@
     if (FILTER_OK) {
       x.filter = `blur(${px}px)`; drawCover(x, src, w, h, 1.12); x.filter = 'none';
     } else {
+      // No canvas blur (iPad): shrink in halves to a tiny copy, then enlarge in halves.
+      // Each step averages pixels, which gives a smooth blur without blocky squares.
       const f = Math.max(2, px / 2.5);
-      const s = mk(Math.ceil(w / f), Math.ceil(h / f));
-      drawCover(s.getContext('2d'), src, s.width, s.height, 1.05);
-      x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
-      x.drawImage(s, 0, 0, w, h);
+      const tw = Math.max(2, Math.ceil(w / f)), th = Math.max(2, Math.ceil(h / f));
+      let cur = mk(w, h); drawCover(cur.getContext('2d'), src, w, h, 1.05);
+      const steps = [];
+      while (cur.width / 2 >= tw) {
+        const n = mk(Math.ceil(cur.width / 2), Math.ceil(cur.height / 2)), nx = n.getContext('2d');
+        nx.imageSmoothingEnabled = true; nx.imageSmoothingQuality = 'high';
+        nx.drawImage(cur, 0, 0, n.width, n.height);
+        steps.push(cur); cur = n;
+      }
+      while (steps.length) {
+        const up = steps.pop(), n = mk(up.width, up.height), nx = n.getContext('2d');
+        nx.imageSmoothingEnabled = true; nx.imageSmoothingQuality = 'high';
+        nx.drawImage(cur, 0, 0, n.width, n.height);
+        cur = n;
+      }
+      x.drawImage(cur, 0, 0, w, h);
     }
     if (desat > 0) {
       x.globalCompositeOperation = 'saturation';
@@ -409,8 +430,44 @@
     layers = {
       heavy: blurredLayer(src, w, h, 26 * DPR, 0.45, 0.4),
       soft: blurredLayer(src, w, h, 9 * DPR, 0.2, 0.22),
-      sharp
+      sharp,
+      comp: mk(w, h), tmp: mk(w, h), compP: -1
     };
+  }
+
+  // The photo clears from the edges inward: an oval "window" of sharp photo grows from
+  // the screen border toward the center. The center is only fully sharp at p = 1
+  // (all bricks gone). A half-blurred ring runs just ahead of the sharp edge.
+  function buildComposite(p) {
+    const { comp, tmp, heavy, soft, sharp } = layers;
+    const w = comp.width, h = comp.height;
+    const cx = comp.getContext('2d'), tx = tmp.getContext('2d');
+    const RMAX = Math.SQRT2, F = 0.28, BAND = 0.35; // in units of half the screen size
+    cx.setTransform(1, 0, 0, 1, 0, 0); cx.globalCompositeOperation = 'source-over'; cx.globalAlpha = 1;
+    cx.drawImage(heavy, 0, 0);
+    const reveal = (layer, R) => {
+      if (R >= RMAX + F) return; // nothing of this layer visible yet
+      tx.setTransform(1, 0, 0, 1, 0, 0); tx.globalCompositeOperation = 'source-over';
+      tx.clearRect(0, 0, w, h);
+      tx.drawImage(layer, 0, 0);
+      if (R > -F) {
+        tx.globalCompositeOperation = 'destination-in';
+        tx.setTransform(w / 2, 0, 0, h / 2, w / 2, h / 2); // unit circle = oval filling the screen
+        const g = tx.createRadialGradient(0, 0, 0, 0, 0, RMAX + F);
+        const a = clamp((R - F) / (RMAX + F), 0, 1), b = clamp((R + F) / (RMAX + F), 0, 1);
+        g.addColorStop(0, 'rgba(0,0,0,0)');
+        if (a > 0) g.addColorStop(a, 'rgba(0,0,0,0)');
+        g.addColorStop(Math.max(b, a + 0.001), 'rgba(0,0,0,1)');
+        g.addColorStop(1, 'rgba(0,0,0,1)');
+        tx.fillStyle = g; tx.fillRect(-1, -1, 2, 2);
+        tx.setTransform(1, 0, 0, 1, 0, 0); tx.globalCompositeOperation = 'source-over';
+      }
+      cx.drawImage(tmp, 0, 0);
+    };
+    const R = (RMAX + F) * (1 - p) - F * p; // RMAX+F at p=0 (all blurred) → -F at p=1 (all sharp)
+    reveal(soft, R + BAND);
+    reveal(sharp, R);
+    layers.compP = p;
   }
 
   // ---------------------------------------------------------------- audio & haptics
@@ -844,13 +901,11 @@
 
   function drawBackground() {
     if (!layers) { ctx.fillStyle = '#1b1430'; ctx.fillRect(0, 0, W, H); return; }
-    const p = revealShown;
-    ctx.drawImage(layers.heavy, 0, 0, W, H);
-    const a1 = clamp(p / 0.5, 0, 1);
-    if (a1 > 0) { ctx.globalAlpha = a1; ctx.drawImage(layers.soft, 0, 0, W, H); }
-    const a2 = clamp((p - 0.5) / 0.5, 0, 1);
-    if (a2 > 0) { ctx.globalAlpha = a2; ctx.drawImage(layers.sharp, 0, 0, W, H); }
-    ctx.globalAlpha = 1;
+    // Rebuild the composite only when the reveal moved visibly (saves battery).
+    if (Math.abs(revealShown - layers.compP) > 0.004 || (revealShown >= 0.999 && layers.compP < 1)) {
+      buildComposite(revealShown >= 0.999 ? 1 : revealShown);
+    }
+    ctx.drawImage(layers.comp, 0, 0, W, H);
     // Darker band at the bottom so the paddle is always easy to see.
     if (state !== 'clearing') {
       const g = ctx.createLinearGradient(0, L.paddleY - H * 0.15, 0, H);
@@ -1264,6 +1319,7 @@
     $('m-net').checked = !!settings.safetyNet; $('m-sound').checked = !!settings.sound; $('m-vibe').checked = !!settings.vibration;
     $('m-power').checked = !!settings.powerups;
     $('m-status').textContent = ''; menuChanged = false;
+    $('m-version').textContent = 'Versión ' + VERSION + (FILTER_OK ? '' : ' · desenfoque alternativo');
     $('menu').classList.add('show');
     renderMenuPhotos();
   }
