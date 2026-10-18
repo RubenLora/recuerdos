@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b1430">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Recuerdos">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="robots" content="noindex, nofollow">
+<title>Recuerdos</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root {
+    --bg: #1b1430;
+    --panel: rgba(20, 14, 38, 0.84);
+    --text: #fffaf0;
+    --menu-bg: #fffaf0;
+    --menu-text: #2a2238;
+    --menu-line: #e6dccb;
+  }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+  .screen {
+    position: fixed; inset: 0; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 24px; box-sizing: border-box; gap: 28px;
+    touch-action: none;
+  }
+  .screen.show { display: flex; }
+  .big { font-size: clamp(36px, 11vw, 68px); font-weight: 800; line-height: 1.1; text-shadow: 0 3px 14px rgba(0,0,0,.75); }
+  .mid { font-size: clamp(22px, 6.5vw, 40px); font-weight: 600; line-height: 1.25; text-shadow: 0 2px 10px rgba(0,0,0,.75); }
+  .small { font-size: clamp(18px, 5vw, 28px); opacity: .9; }
+  .btn {
+    font: inherit; font-size: clamp(30px, 9vw, 50px); font-weight: 800;
+    color: #2b1700; background: linear-gradient(#ffd98a, #ffb547);
+    border: 4px solid #fff3d6; border-radius: 999px;
+    padding: .4em 1.4em; min-height: 84px; min-width: 64%;
+    box-shadow: 0 8px 26px rgba(0,0,0,.5); cursor: pointer;
+  }
+  .btn:active { transform: scale(.97); }
+
+  #title { background: rgba(10, 6, 24, .35); }
+  #complete { justify-content: flex-end; padding-bottom: max(28px, env(safe-area-inset-bottom)); pointer-events: none; }
+  #complete .panel {
+    pointer-events: auto;
+    background: var(--panel); border-radius: 30px; padding: 20px 22px 24px;
+    width: 100%; max-width: 640px; box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 14px; align-items: center;
+    opacity: 0; transition: opacity .8s;
+  }
+  #complete .panel.show { opacity: 1; }
+  #next { visibility: hidden; opacity: 0; transition: opacity .6s; }
+  #next.show { visibility: visible; opacity: 1; }
+  #pause { background: rgba(10, 6, 24, .6); }
+
+  /* Family password: typed once per device when the game is installed */
+  #unlock { background: var(--bg); justify-content: center; gap: 18px; touch-action: auto; -webkit-user-select: text; user-select: text; }
+  #unlock input { font: inherit; font-size: 28px; padding: 14px 18px; border-radius: 16px; border: 3px solid #c9b896; width: min(90%, 420px); box-sizing: border-box; text-align: center; background: #fffaf0; color: #2a2238; }
+  #unlock .btn { min-width: 50%; }
+  #pw-skip { font-size: 22px; min-height: 56px; background: none; border: 2px solid rgba(255,250,240,.5); color: var(--text); box-shadow: none; margin-top: 10px; }
+  #pw-msg { min-height: 1.4em; }
+
+  /* Caregiver menu (hidden; open with a 3-second press on the greeting) */
+  #menu {
+    position: fixed; inset: 0; display: none; overflow-y: auto; touch-action: pan-y;
+    background: var(--menu-bg); color: var(--menu-text);
+    padding: 20px 18px 60px; box-sizing: border-box;
+    -webkit-user-select: text; user-select: text;
+  }
+  #menu.show { display: block; }
+  #menu h2 { margin: 6px 0 4px; font-size: 26px; }
+  #menu h3 { margin: 22px 0 8px; font-size: 20px; border-top: 1px solid var(--menu-line); padding-top: 16px; }
+  #menu p { margin: 6px 0; font-size: 16px; line-height: 1.4; }
+  #menu label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 18px; margin: 10px 0; }
+  #menu input[type=text], #menu select { font-size: 18px; padding: 8px 10px; border: 1px solid #bbb; border-radius: 10px; background: #fff; color: var(--menu-text); }
+  #menu input[type=checkbox] { width: 26px; height: 26px; }
+  #menu .mbtn { font-size: 18px; padding: 12px 16px; border-radius: 12px; border: 1px solid #c9b896; background: #ffe2a8; color: #2b1700; margin: 6px 6px 6px 0; cursor: pointer; }
+  #menu .mbtn.danger { background: #ffd1c7; border-color: #d99; }
+  #menu .mbtn.primary { background: #2a2238; color: #fff; border-color: #2a2238; font-size: 20px; padding: 14px 28px; }
+  #m-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 10px; }
+  .thumb { border: 1px solid var(--menu-line); border-radius: 12px; padding: 6px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
+  .thumb img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
+  .thumb input { width: 100%; box-sizing: border-box; font-size: 15px !important; }
+  .thumb button { font-size: 15px; padding: 6px; border-radius: 8px; border: 1px solid #d99; background: #ffd1c7; }
+  #m-status { font-weight: 600; min-height: 1.4em; }
+</style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="title" class="screen">
+    <div id="greet" class="big">¡Hola!</div>
+    <div id="count" class="mid"></div>
+    <button id="play" class="btn">Jugar</button>
+  </div>
+
+  <div id="complete" class="screen">
+    <div class="panel" id="panel">
+      <div id="well" class="big">¡Lo lograste!</div>
+      <div id="caption" class="mid"></div>
+      <div id="total" class="small"></div>
+      <button id="next" class="btn">Siguiente</button>
+    </div>
+  </div>
+
+  <div id="unlock" class="screen">
+    <div class="mid">Contraseña de la familia</div>
+    <div class="small">Solo se pide una vez en este aparato.</div>
+    <input id="pw" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <div id="pw-msg" class="small"></div>
+    <button id="pw-ok" class="btn">Entrar</button>
+    <button id="pw-skip" class="btn">Jugar sin fotos</button>
+  </div>
+
+  <div id="pause" class="screen">
+    <div class="big" id="pause-text">Toca para seguir</div>
+  </div>
+
+  <div id="menu" role="dialog" aria-label="Ajustes">
+    <h2>Ajustes (para la familia)</h2>
+    <p>Este menú se abre manteniendo presionado el saludo de la pantalla de inicio durante 3 segundos.</p>
+
+    <h3>Jugador</h3>
+    <label>Nombre en el saludo <input type="text" id="m-name" maxlength="30"></label>
+
+    <h3>Fotos</h3>
+    <p id="m-folder"></p>
+    <button class="mbtn" id="m-forget">Olvidar la contraseña de la familia en este aparato</button>
+    <p>Fotos añadidas en este aparato (se quedan solo aquí):</p>
+    <input type="file" id="m-file" accept="image/*" multiple hidden>
+    <button class="mbtn" id="m-add">+ Añadir fotos desde la galería</button>
+    <p id="m-status"></p>
+    <div id="m-photos"></div>
+    <p>El texto debajo de cada foto aparece cuando se descubre la foto (por ejemplo: «Navidad 2019 con los nietos»). Puede quedar vacío.</p>
+    <button class="mbtn" id="m-skip">Cambiar la foto del nivel actual</button>
+
+    <h3>Dificultad</h3>
+    <label>Velocidad de la bola
+      <select id="m-speed">
+        <option value="muy-lenta">Muy lenta</option>
+        <option value="lenta">Lenta</option>
+        <option value="normal">Normal</option>
+      </select>
+    </label>
+    <label>Tamaño de la paleta
+      <select id="m-paddle">
+        <option value="normal">Normal</option>
+        <option value="grande">Grande</option>
+        <option value="muy-grande">Muy grande</option>
+      </select>
+    </label>
+    <label>Red de seguridad (la bola nunca se pierde) <input type="checkbox" id="m-net"></label>
+    <p>El juego también se ajusta solo: si la bola se escapa, va más lenta y la paleta crece un poco.</p>
+
+    <h3>Sonido y vibración</h3>
+    <label>Sonido <input type="checkbox" id="m-sound"></label>
+    <label>Vibración <input type="checkbox" id="m-vibe"></label>
+
+    <h3>Progreso</h3>
+    <p id="m-progress"></p>
+    <button class="mbtn danger" id="m-reset">Reiniciar progreso</button>
+
+    <h3></h3>
+    <button class="mbtn primary" id="m-close">Guardar y volver</button>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
