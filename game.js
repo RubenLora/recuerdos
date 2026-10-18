@@ -8,7 +8,7 @@
     revealedCount: 'Fotos descubiertas: {n}',
     wellDone: ['¡Lo lograste!'], cheers: ['¡Muy bien!'],
     powerMulti: '¡Bolas imán!', powerFire: '¡Bola de fuego!', powerHero: '¡Súper {name}!',
-    powerHeroNoName: '¡Súper héroe!', powerFrog: '¡La rana!'
+    powerHeroNoName: '¡Súper héroe!', powerFrog: '¡La rana!', powerCannon: '¡Cañón de aguacates!'
   }, CFG.text || {});
   const PARAMS = new URLSearchParams(location.search);
   const AUTO = PARAMS.has('auto');          // demo mode: plays itself
@@ -35,9 +35,9 @@
   // Power-ups ("sorpresas"). None of them needs faster hands: capsules drift to the
   // paddle by themselves, extra balls are pulled to the paddle, the hero and the frog
   // work on their own.
-  const POWER_TYPES = ['multi', 'fire', 'hero', 'frog'];
-  const POWER_DUR = { multi: 10, fire: 10, frog: 10 };
-  const VERSION = '6 (2026-10-19)'; // shown in the hidden menu; raise with every upload
+  const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
+  const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
+  const VERSION = '7 (2026-10-19)'; // shown in the hidden menu; raise with every upload
 
   // ---------------------------------------------------------------- storage
   const store = {
@@ -47,7 +47,7 @@
   const DEFAULT_PROGRESS = { level: 0, revealed: 0, current: null, lastPhoto: null, seen: [], everShown: [], adapt: { speed: 0.9, paddle: 0 } };
   const settings = Object.assign({
     playerName: CFG.playerName || '', speed: 'lenta', paddle: 'grande',
-    safetyNet: false, sound: true, vibration: true, powerups: true
+    safetyNet: false, sound: true, music: true, vibration: true, powerups: true
   }, store.get('ark.settings', {}));
   let progress = Object.assign(JSON.parse(JSON.stringify(DEFAULT_PROGRESS)), store.get('ark.progress', {}));
   progress.adapt = Object.assign({ speed: 0.9, paddle: 0 }, progress.adapt);
@@ -219,9 +219,11 @@
 
   // power-ups
   let capsules = [];        // falling capsules
-  let power = null;         // { type, t, dur } for multi / fire / frog
+  let power = null;         // { type, t, dur } for multi / fire / frog / cannon
   let hero = null;          // flying grandchild
   let frog = null;          // frog on the paddle
+  let avocados = [];        // shots from the avocado cannon
+  let cannonTimer = 0;
   let sinceCapsule = 0;     // bricks broken since the last capsule
   let bag = [];             // shuffled bag so every power-up shows up
   let faces = [];           // [{ name, img }]
@@ -251,13 +253,13 @@
     }));
     total = bricks.length; destroyed = 0; reveal = 0; revealShown = 0; cheersGiven = 0;
     dying = []; particles = []; floaters = []; confetti = []; ghosts = [];
-    capsules = []; power = null; hero = null; frog = null; sinceCapsule = 0;
+    capsules = []; power = null; hero = null; frog = null; avocados = []; sinceCapsule = 0;
     sinceBrick = 0;
   }
 
   function resetBall() {
     balls = [newBall()];
-    power = null; capsules = []; frog = null; hero = null;
+    power = null; capsules = []; frog = null; hero = null; avocados = [];
     launchTimer = 3.0;
     setState('ready');
   }
@@ -267,6 +269,7 @@
     const a = (Math.random() * 50 - 25) * Math.PI / 180;
     b.vx = Math.sin(a) * sp; b.vy = -Math.cos(a) * sp;
     sinceBrick = 0; noteIdx = 0; showMoveHint = false;
+    sfx.launch();
     setState('play');
   }
 
@@ -432,7 +435,8 @@
       heavy: blurredLayer(src, w, h, Math.max(w, h) * 0.12, 0.25, 0.35),
       soft: blurredLayer(src, w, h, Math.max(w, h) * 0.035, 0.25, 0.25),
       sharp,
-      comp: mk(w, h), tmp: mk(w, h), compP: -1
+      // The mix of blurred/sharp is built at half size (4x cheaper on the phone); the blur hides it.
+      comp: mk(Math.ceil(w / 2), Math.ceil(h / 2)), tmp: mk(Math.ceil(w / 2), Math.ceil(h / 2)), compP: -1
     };
   }
 
@@ -445,12 +449,12 @@
     const cx = comp.getContext('2d'), tx = tmp.getContext('2d');
     const RMAX = Math.SQRT2, F = 0.28, BAND = 0.35; // in units of half the screen size
     cx.setTransform(1, 0, 0, 1, 0, 0); cx.globalCompositeOperation = 'source-over'; cx.globalAlpha = 1;
-    cx.drawImage(heavy, 0, 0);
+    cx.drawImage(heavy, 0, 0, w, h);
     const reveal = (layer, R) => {
       if (R >= RMAX + F) return; // nothing of this layer visible yet
       tx.setTransform(1, 0, 0, 1, 0, 0); tx.globalCompositeOperation = 'source-over';
       tx.clearRect(0, 0, w, h);
-      tx.drawImage(layer, 0, 0);
+      tx.drawImage(layer, 0, 0, w, h);
       if (R > -F) {
         tx.globalCompositeOperation = 'destination-in';
         tx.setTransform(w / 2, 0, 0, h / 2, w / 2, h / 2); // unit circle = oval filling the screen
@@ -472,25 +476,142 @@
   }
 
   // ---------------------------------------------------------------- audio & haptics
+  // All sound is made in code (no audio files). Sounds and the music follow the ones in the
+  // Tile-breaker game by Ruben's brother, adapted to this game.
   let AC = null, master = null;
   function audioInit() {
-    if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+    if (AC) { if (AC.state === 'suspended') AC.resume(); startMusic(); return; }
     try {
       AC = new (window.AudioContext || window.webkitAudioContext)();
       master = AC.createGain(); master.gain.value = 0.6;
       const comp = AC.createDynamicsCompressor();
       master.connect(comp); comp.connect(AC.destination);
+      startMusic();
     } catch (e) { AC = null; }
   }
   function tone(freq, dur, type, vol, when) {
     if (!AC || !settings.sound) return;
-    const t = AC.currentTime + (when || 0);
+    try {
+      const t = AC.currentTime + (when || 0);
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.type = type || 'sine'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+    } catch (e) { /* audio is never worth a crash */ }
+  }
+  // A note whose pitch slides from f0 to f1.
+  function glide(f0, f1, dur, type, vol, when) {
+    if (!AC || !settings.sound) return;
+    try {
+      const t = AC.currentTime + (when || 0);
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.type = type || 'triangle';
+      o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+    } catch (e) { /* ignore */ }
+  }
+  // A short puff of filtered noise (for the avocado splat).
+  let noiseBuf = null;
+  function puff(vol, cutoff, dur, when) {
+    if (!AC || !settings.sound) return;
+    try {
+      if (!noiseBuf) {
+        const n = Math.floor(AC.sampleRate * 0.25);
+        noiseBuf = AC.createBuffer(1, n, AC.sampleRate);
+        const d = noiseBuf.getChannelData(0);
+        for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
+      }
+      const t = AC.currentTime + (when || 0);
+      const src = AC.createBufferSource(); src.buffer = noiseBuf;
+      const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
+      const g = AC.createGain();
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(f); f.connect(g); g.connect(master); src.start(t); src.stop(t + dur);
+    } catch (e) { /* ignore */ }
+  }
+  const vary = (f, semis) => f * 2 ** ((Math.random() * 2 - 1) * (semis || 0.5) / 12);
+
+  // --- music: a calm loop of four chords (A minor, F, C, G; 4 s each) on a soft pad, a bass
+  // note under each, and now and then a quiet melody note with a little echo. Plays while the
+  // game is open, stops while the page is hidden, and steps back for the jingles.
+  const MUSIC_BAR = 4, MUSIC_AHEAD = 1.5, MUSIC_VOLUME = 0.035;
+  const MUSIC_CHORDS = [ // MIDI note numbers (69 = A4, 440 Hz)
+    { pad: [57, 60, 64], bass: 45, melody: [69, 72, 76, 79, 81] },
+    { pad: [57, 60, 65], bass: 41, melody: [69, 72, 74, 79, 81] },
+    { pad: [55, 60, 64], bass: 48, melody: [72, 74, 76, 79, 81] },
+    { pad: [55, 59, 62], bass: 43, melody: [69, 74, 76, 79] }
+  ];
+  const midiHz = n => 440 * 2 ** ((n - 69) / 12);
+  let music = null, musicTimer = 0, musicNextBar = 0, musicBarNo = 0;
+
+  function musicNote(dests, f, type, at, attack, hold, release, vol, detune) {
     const o = AC.createOscillator(), g = AC.createGain();
-    o.type = type || 'sine'; o.frequency.value = freq;
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+    o.type = type; o.frequency.value = f; o.detune.value = detune || 0;
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(vol, at + attack);
+    g.gain.setValueAtTime(vol, at + attack + hold);
+    g.gain.linearRampToValueAtTime(0, at + attack + hold + release);
+    o.connect(g); dests.forEach(d => g.connect(d));
+    o.start(at); o.stop(at + attack + hold + release + 0.05);
+  }
+  function playBar(n, t) {
+    const chord = MUSIC_CHORDS[n % MUSIC_CHORDS.length];
+    chord.pad.forEach(p => {
+      musicNote([music.filter], midiHz(p), 'sine', t, 1.2, MUSIC_BAR - 1.2, 1.5, 0.1);
+      musicNote([music.filter], midiHz(p), 'triangle', t, 1.2, MUSIC_BAR - 1.2, 1.5, 0.1, 4);
+    });
+    musicNote([music.filter], midiHz(chord.bass), 'triangle', t, 0.3, 1.5, 2.2, 0.25);
+    for (let beat = 0; beat < 4; beat++) {
+      if (Math.random() < 0.45) musicNote([music.filter, music.echo], midiHz(pick(chord.melody)), 'sine', t + beat, 0.03, 0.05, 1, 0.2);
+    }
+  }
+  function scheduleMusic() {
+    if (!music || !AC || AC.state !== 'running') return;
+    try {
+      if (musicNextBar < AC.currentTime) musicNextBar = AC.currentTime + 0.1;
+      while (musicNextBar < AC.currentTime + MUSIC_AHEAD) { playBar(musicBarNo++, musicNextBar); musicNextBar += MUSIC_BAR; }
+    } catch (e) { stopMusic(); }
+  }
+  function startMusic() {
+    if (!settings.music || !settings.sound || music || !AC || document.hidden) return;
+    try {
+      const t = AC.currentTime;
+      const gain = AC.createGain(); gain.gain.setValueAtTime(0, t); gain.gain.linearRampToValueAtTime(MUSIC_VOLUME, t + 1.5);
+      const duck = AC.createGain(); duck.gain.value = 1;
+      const filter = AC.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 1400; filter.Q.value = 0.5;
+      const echo = AC.createDelay(1); echo.delayTime.value = 0.375;
+      const feedback = AC.createGain(); feedback.gain.value = 0.3;
+      const wet = AC.createGain(); wet.gain.value = 0.25;
+      filter.connect(gain); echo.connect(feedback); feedback.connect(echo); echo.connect(wet); wet.connect(gain);
+      gain.connect(duck); duck.connect(master);
+      music = { gain, duck, filter, echo, feedback, wet };
+      musicNextBar = t + 0.1;
+      musicTimer = setInterval(scheduleMusic, 250);
+      scheduleMusic();
+    } catch (e) { music = null; }
+  }
+  function stopMusic() {
+    clearInterval(musicTimer); musicTimer = 0;
+    const m = music; music = null;
+    if (!m) return;
+    try {
+      const g = m.gain.gain, t = AC.currentTime;
+      g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + 1);
+    } catch (e) { /* ignore */ }
+    setTimeout(() => { [m.filter, m.echo, m.feedback, m.wet, m.gain, m.duck].forEach(n => { try { n.disconnect(); } catch (e) { /* ignore */ } }); }, 1100);
+  }
+  function duckMusic(secs) {
+    if (!music) return;
+    try {
+      const g = music.duck.gain, t = AC.currentTime;
+      g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
+      g.linearRampToValueAtTime(0.4, t + 0.1); g.setValueAtTime(0.4, t + secs); g.linearRampToValueAtTime(1, t + secs + 0.6);
+    } catch (e) { /* ignore */ }
   }
   // Mid-range bell (fundamental 260-800 Hz): easier to hear with age-related high-frequency loss.
   function bell(freq, when, vol) {
@@ -499,16 +620,26 @@
     tone(freq * 2, 0.35, 'sine', vol * 0.22, when);
     tone(freq * 3, 0.18, 'triangle', vol * 0.06, when);
   }
+  let lastWall = -Infinity;
   const sfx = {
     brick() { bell(SCALE[Math.min(noteIdx, SCALE.length - 1)]); noteIdx++; },
-    paddle() { tone(220, 0.16, 'triangle', 0.32); tone(110, 0.12, 'sine', 0.2); },
+    // The paddle: G4 in the middle, A4 further out, C5 at the ends (in the music's key).
+    paddle(rel) {
+      const f = vary(Math.abs(rel) < 1 / 3 ? 392 : Math.abs(rel) < 2 / 3 ? 440 : 523.25, 0.25);
+      tone(f, 0.12, 'triangle', 0.3); tone(f / 2, 0.1, 'sine', 0.18);
+    },
+    wall() { const now = performance.now(); if (now - lastWall < 40) return; lastWall = now; tone(vary(260), 0.06, 'triangle', 0.16); },
+    launch() { tone(523.25, 0.1, 'sine', 0.18); tone(783.99, 0.1, 'sine', 0.18, 0.06); },
     net() { tone(330, 0.2, 'triangle', 0.18); },
-    miss() { tone(196, 0.5, 'sine', 0.14); },
-    cheer() { bell(523.25, 0, 0.25); bell(659.25, 0.12, 0.25); },
-    power() { bell(392, 0, 0.3); bell(523.25, 0.1, 0.3); bell(659.25, 0.2, 0.3); },
+    miss() { glide(330, 220, 0.3, 'triangle', 0.18); glide(660, 440, 0.3, 'sine', 0.06); },
+    cheer() { duckMusic(0.8); bell(523.25, 0, 0.25); bell(659.25, 0.12, 0.25); },
+    power() { duckMusic(0.8); bell(392, 0, 0.3); bell(523.25, 0.1, 0.3); bell(659.25, 0.2, 0.3); },
     whoosh() { for (let i = 0; i < 6; i++) tone(180 + i * 60, 0.25, 'triangle', 0.08, i * 0.05); },
-    slurp() { tone(300, 0.12, 'sine', 0.2); tone(420, 0.12, 'sine', 0.2, 0.1); },
+    slurp() { glide(250, 520, 0.18, 'sine', 0.22); tone(620, 0.08, 'sine', 0.12, 0.18); },
+    shot() { glide(220, 440, 0.08, 'square', 0.06); puff(0.12, 1200, 0.08); },
+    splat() { glide(180, 70, 0.18, 'sine', 0.25); puff(0.2, 600, 0.15); },
     win() {
+      duckMusic(3);
       [261.63, 329.63, 392.0, 523.25, 659.25, 783.99].forEach((f, i) => bell(f, i * 0.14, 0.32));
       [261.63, 329.63, 392.0].forEach(f => tone(f, 2.2, 'sine', 0.12, 0.9));
     }
@@ -577,9 +708,9 @@
   }
 
   function collideWalls(b) {
-    if (b.x < b.r) { b.x = b.r; b.vx = Math.abs(b.vx); }
-    if (b.x > W - b.r) { b.x = W - b.r; b.vx = -Math.abs(b.vx); }
-    if (b.y < b.r) { b.y = b.r; b.vy = Math.abs(b.vy); }
+    if (b.x < b.r) { b.x = b.r; b.vx = Math.abs(b.vx); sfx.wall(); }
+    if (b.x > W - b.r) { b.x = W - b.r; b.vx = -Math.abs(b.vx); sfx.wall(); }
+    if (b.y < b.r) { b.y = b.r; b.vy = Math.abs(b.vy); sfx.wall(); }
   }
 
   function collidePaddle(b, sp) {
@@ -591,7 +722,7 @@
       b.vx = Math.sin(ang) * sp; b.vy = -Math.cos(ang) * sp;
       b.y = top - b.r;
       noteIdx = 0; paddle.squish = 1;
-      sfx.paddle(); buzz(10);
+      sfx.paddle(rel); buzz(10);
       const a = progress.adapt;
       a.streakHits = (a.streakHits || 0) + 1;
       if (a.streakHits % 6 === 0) a.speed = Math.min(1, a.speed + 0.03); // slowly back to normal
@@ -664,7 +795,7 @@
   function levelClear() {
     setState('clearing');
     reveal = 1;
-    capsules = []; power = null; hero = null; frog = null;
+    capsules = []; power = null; hero = null; frog = null; avocados = [];
     sfx.win(); buzz([30, 60, 30]);
     for (let i = 0; i < 60; i++) {
       confetti.push({
@@ -706,9 +837,9 @@
 
   function maybeDropCapsule(k) {
     if (!settings.powerups || power || hero || frog || capsules.length) return;
-    if (alive().length < 4) return; // the steering assist handles the end of a level
+    if (alive().length < 3) return; // the steering assist handles the end of a level
     const forced = DEBUG_POWER && destroyed === 1;
-    if (!forced && (sinceCapsule < 4 || Math.random() > 0.4)) return;
+    if (!forced && (sinceCapsule < 2 || Math.random() > 0.7)) return;
     sinceCapsule = 0;
     const type = forced ? DEBUG_POWER : nextPowerType();
     capsules.push({ x: k.x + k.w / 2, y: k.y + k.h / 2, type, t: 0, face: type === 'hero' ? (faces.length ? pick(faces) : null) : null });
@@ -753,8 +884,50 @@
     } else if (c.type === 'frog') {
       frog = { t: 0, dur: POWER_DUR.frog, tongue: null, since: 0.4, eaten: 0, blink: 0 };
       label = T.powerFrog;
+    } else if (c.type === 'cannon') {
+      power = { type: 'cannon', t: 0, dur: POWER_DUR.cannon };
+      cannonTimer = 0.3;
+      label = T.powerCannon;
     }
     floaters.push({ text: label, t: 0, dur: 1.8 });
+  }
+
+  // --- avocado cannon: sits on the paddle and shoots an avocado every half second. Shots
+  // lean toward the nearest brick, so he only has to be roughly under the bricks.
+  function stepCannon(dt) {
+    if (power && power.type === 'cannon') {
+      cannonTimer -= dt;
+      if (cannonTimer <= 0) {
+        cannonTimer = 0.5;
+        const sp = H * 0.7, x0 = paddle.x, y0 = L.paddleY - L.paddleH;
+        let ang = -Math.PI / 2;
+        const list = alive();
+        if (list.length) {
+          let best = null, bd = Infinity;
+          for (const k of list) { const dx = k.x + k.w / 2 - x0, dy = k.y + k.h / 2 - y0, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = k; } }
+          const want = Math.atan2(best.y + best.h / 2 - y0, best.x + best.w / 2 - x0);
+          ang = clamp(want, -Math.PI / 2 - 0.45, -Math.PI / 2 + 0.45);
+        }
+        avocados.push({ x: x0, y: y0, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, rot: Math.random() * 6, r: L.ballR * 0.9 });
+        sfx.shot(); buzz(8);
+      }
+    }
+    for (const a of avocados.slice()) {
+      a.x += a.vx * dt; a.y += a.vy * dt; a.rot += dt * 6;
+      let hit = null;
+      for (const k of bricks) {
+        if (!k.alive || k.held) continue;
+        if (a.x + a.r > k.x && a.x - a.r < k.x + k.w && a.y + a.r > k.y && a.y - a.r < k.y + k.h) { hit = k; break; }
+      }
+      if (hit) {
+        avocados.splice(avocados.indexOf(a), 1);
+        for (let i = 0; i < 8; i++) particles.push({ x: a.x, y: a.y, vx: (Math.random() - 0.5) * W * 0.4, vy: -Math.random() * H * 0.2, s: 4 + Math.random() * 4, c: '#7cc242', t: 0, life: 0.6 });
+        sfx.splat();
+        destroyBrick(hit, { x: a.x, y: a.y });
+      } else if (a.y < -a.r * 2 || a.x < -a.r || a.x > W + a.r) {
+        avocados.splice(avocados.indexOf(a), 1);
+      }
+    }
   }
 
   function stepPower(dt) {
@@ -792,10 +965,11 @@
     } else {
       hero.y -= H * 0.55 * dt;
       hero.tilt = Math.sin(hero.t * 6) * 0.05;
-      const top = hero.y - hero.h, half = hero.h * 0.32;
+      const top = hero.y - hero.h, half = hero.h * 0.32, hx = hero.x, hy = hero.y;
       for (const k of bricks) {
         if (!k.alive || k.held) continue;
-        if (k.x < hero.x + half && k.x + k.w > hero.x - half && k.y + k.h > top && k.y < hero.y) destroyBrick(k);
+        if (k.x < hx + half && k.x + k.w > hx - half && k.y + k.h > top && k.y < hy) destroyBrick(k);
+        if (!hero) return; // that was the last brick: the level is over
       }
       if (hero.y < -10) hero = null;
     }
@@ -818,9 +992,10 @@
       } else {
         tg.k = Math.max(0, 1 - tg.t / 0.32);
         if (tg.k <= 0) {
+          sfx.slurp();
           destroyBrick(tg.b, { x: fp.x, y: fp.y - L.paddleH * 1.2 });
-          sfx.slurp(); frog.eaten++; frog.tongue = null; frog.since = 0;
-          if (!frog) return; // level finished
+          if (!frog) return; // that was the last brick: the level is over
+          frog.eaten++; frog.tongue = null; frog.since = 0;
         }
       }
     } else {
@@ -861,7 +1036,7 @@
       if (state === 'ready') { launchTimer -= dt; if (launchTimer <= 0 || (AUTO && stateTime > 0.8)) launch(); }
     } else if (state === 'play') {
       if (freeze > 0) freeze -= dt;
-      else { stepBalls(dt); stepCapsules(dt); stepPower(dt); stepHero(dt); stepFrog(dt); }
+      else { stepBalls(dt); stepCapsules(dt); stepPower(dt); stepHero(dt); stepFrog(dt); stepCannon(dt); }
     } else if (state === 'missed') {
       missTimer -= dt; if (missTimer <= 0) resetBall();
     } else if (state === 'clearing') {
@@ -902,11 +1077,13 @@
 
   function drawBackground() {
     if (!layers) { ctx.fillStyle = '#1b1430'; ctx.fillRect(0, 0, W, H); return; }
-    // Rebuild the composite only when the reveal moved visibly (saves battery).
-    if (Math.abs(revealShown - layers.compP) > 0.004 || (revealShown >= 0.999 && layers.compP < 1)) {
-      buildComposite(revealShown >= 0.999 ? 1 : revealShown);
+    if (revealShown >= 0.999) {
+      ctx.drawImage(layers.sharp, 0, 0, W, H); // fully revealed: the full-size photo
+    } else {
+      // Rebuild the mix only when the reveal moved visibly (saves battery).
+      if (Math.abs(revealShown - layers.compP) > 0.006) buildComposite(revealShown);
+      ctx.drawImage(layers.comp, 0, 0, W, H);
     }
-    ctx.drawImage(layers.comp, 0, 0, W, H);
     // Darker band at the bottom so the paddle is always easy to see.
     if (state !== 'clearing') {
       const g = ctx.createLinearGradient(0, L.paddleY - H * 0.15, 0, H);
@@ -987,7 +1164,7 @@
     ctx.save();
     ctx.shadowColor = 'rgba(255,255,255,.8)'; ctx.shadowBlur = 14;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = { multi: '#6fc3ff', fire: '#ff8a2a', hero: '#ffd84d', frog: '#5ed6a0' }[c.type]; ctx.fill();
+    ctx.fillStyle = { multi: '#6fc3ff', fire: '#ff8a2a', hero: '#ffd84d', frog: '#5ed6a0', cannon: '#f3e7a8' }[c.type]; ctx.fill();
     ctx.restore();
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.lineWidth = 3; ctx.strokeStyle = '#1b1430'; ctx.stroke();
     if (c.type === 'multi') {
@@ -999,6 +1176,8 @@
       ctx.quadraticCurveTo(x, y + r * 0.7, x - r * 0.2, y + r * 0.5); ctx.quadraticCurveTo(x - r * 0.55, y - r * 0.05, x, y - r * 0.65); ctx.fill();
     } else if (c.type === 'hero') {
       drawFaceOrSmiley(c.face, x, y, r * 0.78);
+    } else if (c.type === 'cannon') {
+      drawAvocado(x, y + r * 0.05, r * 0.6, -0.3);
     } else {
       drawFrogFace(x, y, r * 0.85, 0);
     }
@@ -1006,7 +1185,8 @@
 
   function drawHero() {
     if (!hero) return;
-    const h = hero.h, u = h / 10; // 10 units tall
+    // Big head, small body (more comical): the head keeps its size, the body is 60% of it.
+    const h = hero.h, hu = h / 10, u = hu * 0.6, headR = 1.7 * hu;
     const fly = hero.phase === 'fly';
     const pop = hero.phase === 'stand' ? Math.min(1, hero.t / 0.35) : 1;
     ctx.save();
@@ -1015,42 +1195,43 @@
     ctx.scale(pop, pop);
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     const skin = '#f2c9a0', shirt = '#3b7bff', pants = '#2b3a67', cape = '#ff4d4d';
+    const shoulderY = -6.5 * u, headY = -7 * u - headR * 0.85;
     // cape
     if (fly) {
       ctx.fillStyle = cape; ctx.beginPath();
-      ctx.moveTo(-1.2 * u, -6.6 * u); ctx.lineTo(1.2 * u, -6.6 * u);
-      ctx.lineTo(2.6 * u, -1.2 * u + Math.sin(hero.t * 14) * 0.4 * u); ctx.lineTo(-0.2 * u, -2.2 * u + Math.cos(hero.t * 12) * 0.4 * u); ctx.closePath(); ctx.fill();
+      ctx.moveTo(-1.4 * u, -6.6 * u); ctx.lineTo(1.4 * u, -6.6 * u);
+      ctx.lineTo(3.2 * u, -0.8 * u + Math.sin(hero.t * 14) * 0.5 * u); ctx.lineTo(-0.4 * u, -1.8 * u + Math.cos(hero.t * 12) * 0.5 * u); ctx.closePath(); ctx.fill();
     }
     // legs
-    ctx.strokeStyle = pants; ctx.lineWidth = 1.1 * u;
+    ctx.strokeStyle = pants; ctx.lineWidth = 1.2 * u;
     ctx.beginPath(); ctx.moveTo(-0.7 * u, -3.4 * u); ctx.lineTo(-0.8 * u, -0.5 * u); ctx.stroke(); // left leg straight
     ctx.beginPath(); ctx.moveTo(0.7 * u, -3.4 * u);
-    if (fly) { ctx.lineTo(1.6 * u, -2.3 * u); ctx.lineTo(1.0 * u, -1.0 * u); } else ctx.lineTo(0.8 * u, -0.5 * u);
+    if (fly) { ctx.lineTo(1.7 * u, -2.3 * u); ctx.lineTo(1.1 * u, -1.0 * u); } else ctx.lineTo(0.8 * u, -0.5 * u);
     ctx.stroke();
     // shoes
     ctx.fillStyle = '#5a2d0c';
-    ctx.beginPath(); ctx.ellipse(-0.8 * u, -0.3 * u, 0.9 * u, 0.45 * u, 0, 0, Math.PI * 2); ctx.fill();
-    if (fly) { ctx.beginPath(); ctx.ellipse(1.0 * u, -0.9 * u, 0.9 * u, 0.45 * u, -0.6, 0, Math.PI * 2); ctx.fill(); }
-    else { ctx.beginPath(); ctx.ellipse(0.8 * u, -0.3 * u, 0.9 * u, 0.45 * u, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.beginPath(); ctx.ellipse(-0.8 * u, -0.3 * u, 1.0 * u, 0.5 * u, 0, 0, Math.PI * 2); ctx.fill();
+    if (fly) { ctx.beginPath(); ctx.ellipse(1.1 * u, -0.9 * u, 1.0 * u, 0.5 * u, -0.6, 0, Math.PI * 2); ctx.fill(); }
+    else { ctx.beginPath(); ctx.ellipse(0.8 * u, -0.3 * u, 1.0 * u, 0.5 * u, 0, 0, Math.PI * 2); ctx.fill(); }
     // torso
-    ctx.fillStyle = shirt; rr(-1.5 * u, -7 * u, 3 * u, 3.8 * u, 0.8 * u); ctx.fill();
-    ctx.fillStyle = '#ffd84d'; ctx.beginPath(); ctx.arc(0, -5.4 * u, 0.6 * u, 0, Math.PI * 2); ctx.fill(); // emblem
+    ctx.fillStyle = shirt; rr(-1.6 * u, -7 * u, 3.2 * u, 3.8 * u, 0.9 * u); ctx.fill();
+    ctx.fillStyle = '#ffd84d'; ctx.beginPath(); ctx.arc(0, -5.3 * u, 0.65 * u, 0, Math.PI * 2); ctx.fill(); // emblem
     // arms
-    ctx.strokeStyle = shirt; ctx.lineWidth = 0.9 * u;
+    ctx.strokeStyle = shirt; ctx.lineWidth = 1.0 * u;
     if (fly) {
-      ctx.beginPath(); ctx.moveTo(1.3 * u, -6.5 * u); ctx.lineTo(1.9 * u, -10.2 * u); ctx.stroke(); // arm up with fist
-      ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(2.0 * u, -10.6 * u, 0.6 * u, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(-1.3 * u, -6.5 * u); ctx.lineTo(-1.8 * u, -3.4 * u); ctx.stroke();
-      ctx.beginPath(); ctx.arc(-1.85 * u, -3.1 * u, 0.5 * u, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(1.4 * u, shoulderY); ctx.lineTo(2.4 * u, shoulderY - 4.2 * u); ctx.stroke(); // arm up with fist
+      ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(2.5 * u, shoulderY - 4.7 * u, 0.7 * u, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-1.4 * u, shoulderY); ctx.lineTo(-2.0 * u, -3.4 * u); ctx.stroke();
+      ctx.beginPath(); ctx.arc(-2.05 * u, -3.1 * u, 0.55 * u, 0, Math.PI * 2); ctx.fill();
     } else {
-      ctx.beginPath(); ctx.moveTo(1.4 * u, -6.5 * u); ctx.lineTo(1.9 * u, -3.3 * u); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-1.4 * u, -6.5 * u); ctx.lineTo(-1.9 * u, -3.3 * u); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(1.5 * u, shoulderY); ctx.lineTo(2.1 * u, -3.3 * u); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-1.5 * u, shoulderY); ctx.lineTo(-2.1 * u, -3.3 * u); ctx.stroke();
       ctx.fillStyle = skin;
-      ctx.beginPath(); ctx.arc(1.95 * u, -3.0 * u, 0.5 * u, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(-1.95 * u, -3.0 * u, 0.5 * u, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(2.15 * u, -3.0 * u, 0.55 * u, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(-2.15 * u, -3.0 * u, 0.55 * u, 0, Math.PI * 2); ctx.fill();
     }
-    // head (photo)
-    drawFaceOrSmiley(hero.face, 0, -8.6 * u, 1.7 * u);
+    // head (photo), big
+    drawFaceOrSmiley(hero.face, 0, headY, headR);
     ctx.restore();
     // speed lines when flying
     if (fly) {
@@ -1079,28 +1260,87 @@
     ctx.beginPath(); ctx.arc(cx, cy + r * 0.05, r * 0.5, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
   }
 
+  // A cartoon frog sitting on the paddle, seen from the front: round body with a pale belly,
+  // bent hind legs out to the sides, little hands in front, and the big-eyed face on top.
   function drawFrog() {
     if (!frog) return;
     const fp = frogPos();
-    const r = L.paddleH * 1.4;
-    const cy = fp.y - r * 0.8;
+    const r = L.paddleH * 1.25;            // head radius
+    const baseY = fp.y;                    // where it sits
+    const bodyCy = baseY - r * 0.9, headCy = baseY - r * 2.1;
+    const mouthY = headCy + r * 0.15;
     const fade = frog.t > frog.dur ? Math.max(0, 1 - (frog.t - frog.dur)) : 1;
+    const breathe = 1 + Math.sin(frog.t * 3) * 0.03;
+    ctx.save();
     ctx.globalAlpha = fade;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    const green = '#4cc36b', dark = '#1f6b35', belly = '#d9f5c4';
+    // hind legs (thighs bent out, feet pointing outward)
+    ctx.fillStyle = green; ctx.strokeStyle = dark; ctx.lineWidth = Math.max(2, r * 0.08);
+    [-1, 1].forEach(s => {
+      ctx.beginPath(); ctx.ellipse(fp.x + s * r * 1.25, baseY - r * 0.45, r * 0.6, r * 0.45, s * 0.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); // foot with three toes
+      ctx.moveTo(fp.x + s * r * 1.3, baseY - r * 0.1);
+      for (let i = -1; i <= 1; i++) { ctx.lineTo(fp.x + s * (r * 1.95 + i * r * 0.1), baseY - r * 0.05 + i * r * 0.22); ctx.lineTo(fp.x + s * r * 1.3, baseY - r * 0.1); }
+      ctx.fill(); ctx.stroke();
+    });
+    // body
+    ctx.fillStyle = green;
+    ctx.beginPath(); ctx.ellipse(fp.x, bodyCy, r * 1.05 * breathe, r * 0.95, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = belly;
+    ctx.beginPath(); ctx.ellipse(fp.x, bodyCy + r * 0.12, r * 0.65 * breathe, r * 0.62, 0, 0, Math.PI * 2); ctx.fill();
+    // hands in front
+    ctx.fillStyle = green;
+    [-1, 1].forEach(s => {
+      ctx.beginPath(); ctx.ellipse(fp.x + s * r * 0.55, baseY - r * 0.2, r * 0.32, r * 0.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    });
+    // tongue (drawn before the head so it comes out of the mouth)
     if (frog.tongue) {
       const tg = frog.tongue, b = tg.b;
-      const tx = fp.x + (b.x + b.w / 2 - fp.x) * tg.k, ty = cy + (b.y + b.h / 2 - cy) * tg.k;
-      ctx.strokeStyle = '#ff6f91'; ctx.lineWidth = r * 0.28; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(fp.x, cy + r * 0.1); ctx.lineTo(tx, ty); ctx.stroke();
+      const tx = fp.x + (b.x + b.w / 2 - fp.x) * tg.k, ty = mouthY + (b.y + b.h / 2 - mouthY) * tg.k;
+      ctx.strokeStyle = '#ff6f91'; ctx.lineWidth = r * 0.28;
+      ctx.beginPath(); ctx.moveTo(fp.x, mouthY); ctx.lineTo(tx, ty); ctx.stroke();
       ctx.fillStyle = '#ff6f91'; ctx.beginPath(); ctx.arc(tx, ty, r * 0.3, 0, Math.PI * 2); ctx.fill();
       if (tg.phase === 'in') { // the brick travels back on the tongue, shrinking
         const s = 0.3 + 0.7 * tg.k;
         drawBrickAt(tx - b.w * s / 2, ty - b.h * s / 2, b.w * s, b.h * s, b.color, 1);
       }
     }
-    const open = frog.tongue ? 1 : 0;
-    drawFrogFace(fp.x, cy, r, frog.blink);
-    if (open) { ctx.fillStyle = '#1f6b35'; ctx.beginPath(); ctx.ellipse(fp.x, cy + r * 0.2, r * 0.3, r * 0.22, 0, 0, Math.PI * 2); ctx.fill(); }
-    ctx.globalAlpha = 1;
+    // head
+    drawFrogFace(fp.x, headCy, r, frog.blink);
+    if (frog.tongue) { ctx.fillStyle = dark; ctx.beginPath(); ctx.ellipse(fp.x, mouthY, r * 0.3, r * 0.22, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+
+  // An avocado: dark green pear shape with a lighter highlight (whole fruit, seen from outside).
+  function drawAvocado(x, y, r, rot) {
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(rot || 0);
+    ctx.fillStyle = '#2f6b2a';
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 1.1);
+    ctx.bezierCurveTo(r * 0.6, -r * 1.1, r * 1.0, -r * 0.2, r * 0.95, r * 0.35);
+    ctx.bezierCurveTo(r * 0.85, r * 1.0, -r * 0.85, r * 1.0, -r * 0.95, r * 0.35);
+    ctx.bezierCurveTo(-r * 1.0, -r * 0.2, -r * 0.6, -r * 1.1, 0, -r * 1.1);
+    ctx.closePath(); ctx.fill();
+    ctx.lineWidth = Math.max(1.5, r * 0.12); ctx.strokeStyle = '#17401a'; ctx.stroke();
+    ctx.fillStyle = 'rgba(190,230,120,.55)';
+    ctx.beginPath(); ctx.ellipse(-r * 0.3, -r * 0.1, r * 0.22, r * 0.5, 0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#6b4a1f'; ctx.beginPath(); ctx.ellipse(0, -r * 1.05, r * 0.14, r * 0.2, 0, 0, Math.PI * 2); ctx.fill(); // stem
+    ctx.restore();
+  }
+
+  function drawCannon() {
+    if (!(power && power.type === 'cannon')) return;
+    const w = L.paddleH * 1.3, h = L.paddleH * 1.6, x = paddle.x, y = L.paddleY - L.paddleH / 2;
+    const kick = cannonTimer > 0.42 ? (cannonTimer - 0.42) / 0.08 : 0; // recoil just after a shot
+    ctx.save();
+    ctx.translate(x, y + kick * 4);
+    ctx.fillStyle = '#4a4a5a'; ctx.strokeStyle = '#1b1430'; ctx.lineWidth = 2.5;
+    rr(-w / 2, -h, w, h, w * 0.3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#7cc242'; rr(-w * 0.32, -h - 3, w * 0.64, 6, 3); ctx.fill(); // green rim
+    ctx.beginPath(); ctx.arc(0, 0, w * 0.55, Math.PI, 0); ctx.fillStyle = '#2f3140'; ctx.fill(); ctx.stroke(); // base
+    ctx.restore();
   }
 
   function drawConfetti() {
@@ -1158,7 +1398,8 @@
       ctx.fillStyle = `rgba(158,231,196,${0.45 + netFlash})`;
       rr(W * 0.02, L.netY, W * 0.96, 6, 3); ctx.fill();
     }
-    if (state !== 'clearing') drawPaddle();
+    if (state !== 'clearing') { drawPaddle(); drawCannon(); }
+    avocados.forEach(a => drawAvocado(a.x, a.y, a.r, a.rot));
     drawFrog();
     ghosts.forEach(g => {
       ctx.globalAlpha = 1 - g.t / 0.6; ctx.beginPath(); ctx.arc(g.x, g.y, g.r * (1 + g.t), 0, Math.PI * 2);
@@ -1180,11 +1421,17 @@
   }
 
   // ---------------------------------------------------------------- loop
-  let last = performance.now();
+  let last = performance.now(), errors = 0;
   function frame(t) {
     const dt = Math.min(0.05, (t - last) / 1000); last = t;
-    if (state !== 'paused' && state !== 'boot') update(dt);
-    render();
+    // An error inside one frame must never stop the game: log it and go on with the next frame.
+    try {
+      if (state !== 'paused' && state !== 'boot') update(dt);
+      render();
+    } catch (e) {
+      if (errors++ < 5) console.error(e);
+      if (errors > 60 && state === 'play') resetBall(); // something is stuck: start the ball again
+    }
     requestAnimationFrame(frame);
   }
 
@@ -1266,7 +1513,8 @@
   }
   $('pause').addEventListener('click', resume);
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) pause(); else if (state !== 'title') keepAwake();
+    if (document.hidden) { pause(); stopMusic(); }
+    else { if (state !== 'title') keepAwake(); if (AC) startMusic(); }
   });
   // Android back button: pause instead of closing the game by accident.
   window.addEventListener('popstate', () => {
@@ -1318,7 +1566,7 @@
     $('m-name').value = settings.playerName || '';
     $('m-speed').value = settings.speed; $('m-paddle').value = settings.paddle;
     $('m-net').checked = !!settings.safetyNet; $('m-sound').checked = !!settings.sound; $('m-vibe').checked = !!settings.vibration;
-    $('m-power').checked = !!settings.powerups;
+    $('m-power').checked = !!settings.powerups; $('m-music').checked = !!settings.music;
     $('m-status').textContent = ''; menuChanged = false;
     $('m-version').textContent = 'Versión ' + VERSION + (FILTER_OK ? '' : ' · desenfoque alternativo');
     $('menu').classList.add('show');
@@ -1384,8 +1632,9 @@
     settings.playerName = $('m-name').value.trim();
     settings.speed = $('m-speed').value; settings.paddle = $('m-paddle').value;
     settings.safetyNet = $('m-net').checked; settings.sound = $('m-sound').checked; settings.vibration = $('m-vibe').checked;
-    settings.powerups = $('m-power').checked;
+    settings.powerups = $('m-power').checked; settings.music = $('m-music').checked;
     saveSettings();
+    if (!settings.music || !settings.sound) stopMusic(); else if (AC) startMusic();
     $('menu').classList.remove('show');
     updateTitle();
     if (menuChanged || !pool.find(p => p.id === progress.current)) {

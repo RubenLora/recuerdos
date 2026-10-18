@@ -18,6 +18,7 @@ window.GAME_CONFIG = {
     powerFire: '¡Bola de fuego!',
     powerHero: '¡Súper {name}!',     // {name} = file name in the caras folder
     powerHeroNoName: '¡Súper héroe!',
-    powerFrog: '¡La rana!'
+    powerFrog: '¡La rana!',
+    powerCannon: '¡Cañón de aguacates!'
   }
 };
