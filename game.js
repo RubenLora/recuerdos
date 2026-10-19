@@ -65,7 +65,7 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '17 (2026-10-19)'; // shown in the hidden menu; raise with every upload
+  const VERSION = '18 (2026-10-19)'; // shown in the hidden menu; raise with every upload
   // index.html carries the same number. If they differ, the device got a mix of old and new
   // files (it happens for a few minutes after an upload): reload once to get a matching set.
   const htmlVersion = (document.querySelector('meta[name="app-version"]') || {}).content;

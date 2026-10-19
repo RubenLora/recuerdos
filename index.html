@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Arkanietos">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="robots" content="noindex, nofollow">
-<meta name="app-version" content="17">
+<meta name="app-version" content="18">
 <title>Arkanietos</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
@@ -56,9 +56,9 @@
   .logo {
     font-size: clamp(38px, 11.5vw, 84px); font-weight: 900; letter-spacing: .03em; line-height: 1;
     margin-bottom: -10px; white-space: nowrap;
-    filter: drop-shadow(0 3px 0 #2a1440) drop-shadow(0 6px 14px rgba(0,0,0,.6));
+    filter: drop-shadow(0 4px 0 #2a1440) drop-shadow(0 8px 16px rgba(0,0,0,.7));
   }
-  .logo span { display: inline-block; -webkit-text-stroke: 2px #2a1440; paint-order: stroke fill; }
+  .logo span { display: inline-block; -webkit-text-stroke: 7px #fff; paint-order: stroke fill; } /* white outline (half the stroke shows) */
   .logo span:nth-child(odd) { transform: translateY(-3px) rotate(-3deg); }
   .logo span:nth-child(even) { transform: translateY(2px) rotate(2deg); }
   #complete { justify-content: flex-end; padding-bottom: max(28px, env(safe-area-inset-bottom)); pointer-events: none; }
@@ -238,7 +238,7 @@
     <button class="mbtn primary" id="m-close">Guardar y volver</button>
   </div>
 
-  <script src="config.js?v=17"></script>
-  <script src="game.js?v=17"></script>
+  <script src="config.js?v=18"></script>
+  <script src="game.js?v=18"></script>
 </body>
 </html>
