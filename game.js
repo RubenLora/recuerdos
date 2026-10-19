@@ -64,7 +64,15 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '13 (2026-10-19)';
+  const VERSION = '14 (2026-10-19)';
+  // index.html carries the same number. If they differ, the device got a mix of old and new
+  // files (it happens for a few minutes after an upload): reload once to get a matching set.
+  const htmlVersion = (document.querySelector('meta[name="app-version"]') || {}).content;
+  if (htmlVersion && htmlVersion !== VERSION.split(' ')[0]) {
+    try {
+      if (!sessionStorage.getItem('ark.reloaded')) { sessionStorage.setItem('ark.reloaded', '1'); location.reload(); }
+    } catch (e) { /* ignore */ }
+  }
   const FROG_SCALE = 0.56; // size of the frog relative to the first version (1 = the big one) // shown in the hidden menu; raise with every upload
 
   // ---------------------------------------------------------------- storage
@@ -75,7 +83,7 @@
   const DEFAULT_PROGRESS = { level: 0, revealed: 0, current: null, lastPhoto: null, seen: [], everShown: [], adapt: { speed: 0.9, paddle: 0 } };
   const settings = Object.assign({
     playerName: CFG.playerName || '', speed: 'lenta', paddle: 'grande',
-    safetyNet: false, sound: true, music: true, track: 'fiesta', vibration: true, powerups: true
+    safetyNet: false, sound: true, music: true, track: 'misterio', vibration: true, powerups: true
   }, store.get('ark.settings', {}));
   let progress = Object.assign(JSON.parse(JSON.stringify(DEFAULT_PROGRESS)), store.get('ark.progress', {}));
   progress.adapt = Object.assign({ speed: 0.9, paddle: 0 }, progress.adapt);
@@ -180,7 +188,7 @@
       const scr = $('unlock'), inp = $('pw'), msg = $('pw-msg'), ok = $('pw-ok');
       scr.classList.add('show'); inp.value = ''; msg.textContent = '';
       setTimeout(() => inp.focus(), 300);
-      const done = r => { scr.classList.remove('show'); res(r); };
+      const done = r => { inp.blur(); scr.classList.remove('show'); res(r); }; // blur: so the space bar reaches the game afterwards
       ok.onclick = async () => {
         if (!inp.value) { inp.focus(); return; }
         msg.textContent = 'Comprobando…'; ok.disabled = true;
@@ -1808,7 +1816,9 @@
   cv.addEventListener('pointermove', e => { paddle.tx = e.clientX; });
   document.addEventListener('keydown', e => {
     if (e.key !== ' ' && e.key !== 'Escape') return;
-    if (e.target && e.target.tagName === 'INPUT') return;
+    // typing in a visible text field (password, menu) must not pause the game
+    if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) && e.target.offsetParent !== null) return;
+    if ($('menu').classList.contains('show') || $('gallery').classList.contains('show')) return;
     e.preventDefault();
     if (state === 'paused') resume();
     else if (state === 'play') pause();
@@ -1856,6 +1866,10 @@
     $('panel').classList.remove('show');
     $('next').classList.remove('show');
     setState('boot');
+    // a different track for the new level (the choice in the menu stays the one used at start-up)
+    const others = Object.keys(MUSIC_STYLES).filter(k => k !== settings.track);
+    settings.track = pick(others);
+    if (music) { stopMusic(); startMusic(); }
     prepareLevel().then(resetBall);
   }
   $('next').addEventListener('click', () => { audioInit(); nextLevel(); });
@@ -1936,7 +1950,7 @@
     renderMenuPhotos();
   }
   // The gear buttons on the start, pause and level-complete screens open the menu.
-  ['gear-title', 'gear-pause', 'gear-complete'].forEach(id => $(id).addEventListener('click', e => { e.stopPropagation(); audioInit(); openMenu(); }));
+  ['gear-title', 'gear-pause', 'gear-complete'].forEach(id => { const b = $(id); if (b) b.addEventListener('click', e => { e.stopPropagation(); audioInit(); openMenu(); }); });
 
   // --- gallery of the photos discovered so far
   const galleryUrls = {};
