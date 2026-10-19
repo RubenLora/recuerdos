@@ -6,7 +6,7 @@ window.GAME_CONFIG = {
   // Texts shown in the game. Keep them short.
   text: {
     hello: '¡Hola, {name}!',
-    play: 'Jugar',
+    play: '¡A JUGAR!',
     tapToLaunch: 'Toca para lanzar',
     moveHint: '← Mueve el dedo →',
     next: 'Siguiente',

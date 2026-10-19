@@ -3,7 +3,7 @@
   // ---------------------------------------------------------------- config
   const CFG = window.GAME_CONFIG || {};
   const T = Object.assign({
-    hello: '¡Hola, {name}!', play: 'Jugar', tapToLaunch: 'Toca para lanzar',
+    hello: '¡Hola, {name}!', play: '¡A JUGAR!', tapToLaunch: 'Toca para lanzar',
     moveHint: '← Mueve el dedo →', next: 'Siguiente', tapToContinue: 'Toca para seguir',
     revealedCount: 'Fotos descubiertas: {n}', levelDone: 'Nivel {n} superado', nextLevel: 'Nivel {n}',
     wellDone: ['¡Lo lograste!'], cheers: ['¡Muy bien!'], startCheers: ['¡Vamos, {nick}!'], nick: 'Abu',
@@ -23,17 +23,18 @@
   // Levels, in order of difficulty. X = normal brick (one hit). S = stone brick (two hits: the
   // first cracks it). rows: a layout on a 7-column grid. move: 'wave' = rows slide left and
   // right; 'bob' = columns move up and down; 'drift' = rows travel sideways and wrap around.
+  // amp: how far (or how fast, for drift) they move, 1 = the usual movement; levels 2-6 use less.
   // ring: bricks on turning circles (n bricks, r = size relative to the biggest circle, speed
   // in turns per 10 s; negative = the other way, stones = which bricks are stone). After the
   // last level they repeat, harder: more stone bricks and faster circles.
   const LEVELS = [
-    // 1-6: fixed layouts, stones appear little by little
+    // 1: fixed. 2-6: a little movement from the start, growing level by level; stones appear little by little
     { rows: ['XXXXXXX', 'XXXXXXX', 'XXXXXXX'] },
-    { rows: ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'] },
-    { rows: ['...S...', '..XXX..', '.XXXXX.', 'XXXXXXX', 'XXXXXXX'] },
-    { rows: ['XXXXXXX', 'XSXXXSX', 'XXXXXXX', 'XXXXXXX'] },
-    { rows: ['..XXX..', '.XXXXX.', 'XXSSSXX', '.XXXXX.', '..XXX..'] },
-    { rows: ['X.X.X.X', '.S.S.S.', 'X.X.X.X', '.X.X.X.', 'X.X.X.X'] },
+    { rows: ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'], move: 'bob', amp: 0.35 },   // a heart that breathes
+    { rows: ['...S...', '..XXX..', '.XXXXX.', 'XXXXXXX', 'XXXXXXX'], move: 'wave', amp: 0.3 },             // a mountain that sways
+    { rows: ['XXXXXXX', 'XSXXXSX', 'XXXXXXX', 'XXXXXXX'], move: 'drift', amp: 0.4 },                       // rows that creep sideways
+    { rows: ['..XXX..', '.XXXXX.', 'XXSSSXX', '.XXXXX.', '..XXX..'], move: 'wave', amp: 0.5 },             // a diamond that sways more
+    { rows: ['X.X.X.X', '.S.S.S.', 'X.X.X.X', '.X.X.X.', 'X.X.X.X'], move: 'bob', amp: 0.6 },              // a checkerboard that bobs
     // 7-12: first moving levels, gentle
     { rows: ['.XXXXX.', '.XXXXX.', '.XXXXX.', '.XXXXX.'], move: 'wave' },
     { rows: ['XXXXXXX', 'XXXXXXX', 'XXXXXXX'], move: 'bob' },
@@ -64,7 +65,7 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '16 (2026-10-19)'; // shown in the hidden menu; raise with every upload
+  const VERSION = '17 (2026-10-19)'; // shown in the hidden menu; raise with every upload
   // index.html carries the same number. If they differ, the device got a mix of old and new
   // files (it happens for a few minutes after an upload): reload once to get a matching set.
   const htmlVersion = (document.querySelector('meta[name="app-version"]') || {}).content;
@@ -254,10 +255,11 @@
         b.y = ringCy + Math.sin(a) * R - L.bh / 2;
       } else {
         placeBrick(b);
-        if (b.move === 'wave') b.x += Math.sin(t * 0.9 + b.row * 1.1) * step;
-        else if (b.move === 'bob') b.y += Math.sin(t * 1.3 + b.col * 0.9) * L.bh * 0.9; // columns up and down
+        const amp = b.amp || 1;
+        if (b.move === 'wave') b.x += Math.sin(t * 0.9 + b.row * 1.1) * step * amp;
+        else if (b.move === 'bob') b.y += Math.sin(t * 1.3 + b.col * 0.9) * L.bh * 0.9 * amp; // columns up and down
         else if (b.move === 'drift') {
-          const dir = b.row % 2 ? -1 : 1, v = step * 0.45; // one brick width every ~2 s
+          const dir = b.row % 2 ? -1 : 1, v = step * 0.45 * amp; // one brick width every ~2 s at amp 1
           b.x = ((b.x + dir * v * t + L.bw) % period + period) % period - L.bw;
         }
       }
@@ -315,7 +317,7 @@
     if (def.rows) {
       def.rows.forEach((row, ri) => [...row].forEach((ch, ci) => {
         if (ch !== 'X' && ch !== 'S') return;
-        bricks.push(mkBrick(ch === 'S', COLORS[ri % COLORS.length], { row: ri, col: ci, move: def.move || null }));
+        bricks.push(mkBrick(ch === 'S', COLORS[ri % COLORS.length], { row: ri, col: ci, move: def.move || null, amp: def.amp || 1 }));
       }));
     }
     if (def.ring) {
@@ -941,6 +943,7 @@
     // Magnet paddle: a ball coming down in the lower half is pulled toward the paddle — toward
     // the nearest part of it, not its middle, so a hit near an end still sends the ball out at an angle.
     if (!(power && power.type === 'multi') || b.vy <= 0 || b.y < H * 0.45) return;
+    if (b.y > L.paddleY) return; // already below the paddle: let it go (pulling it back up left it crawling along the bottom)
     const half = paddle.w / 2 - b.r * 0.8;
     turnToward(b, clamp(b.x, paddle.x - half, paddle.x + half), L.paddleY, 2.2 * dt, sp);
   }
@@ -1010,8 +1013,8 @@
       if (b.vy > 0 && b.y + b.r >= L.netY) {
         b.y = L.netY - b.r; b.vy = -Math.abs(b.vy); netFlash = 0.5; sfx.net();
       }
-    } else if (b.y - b.r > H) {
-      if (balls.length > 1) balls.splice(balls.indexOf(b), 1); // an extra ball: no penalty
+    } else if (b.y + b.r >= H) { // touched the bottom edge
+      if (balls.length > 1) balls.splice(balls.indexOf(b), 1); // an extra ball: gone at once, no penalty
       else miss();
     }
   }
