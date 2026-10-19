@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Arkanietos">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="robots" content="noindex, nofollow">
-<meta name="app-version" content="15">
+<meta name="app-version" content="16">
 <title>Arkanietos</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
@@ -53,6 +53,14 @@
   .btn:active { transform: scale(.97); }
 
   #title { background: rgba(10, 6, 24, .35); }
+  .logo {
+    font-size: clamp(38px, 11.5vw, 84px); font-weight: 900; letter-spacing: .03em; line-height: 1;
+    margin-bottom: -10px; white-space: nowrap;
+    filter: drop-shadow(0 3px 0 #2a1440) drop-shadow(0 6px 14px rgba(0,0,0,.6));
+  }
+  .logo span { display: inline-block; -webkit-text-stroke: 2px #2a1440; paint-order: stroke fill; }
+  .logo span:nth-child(odd) { transform: translateY(-3px) rotate(-3deg); }
+  .logo span:nth-child(even) { transform: translateY(2px) rotate(2deg); }
   #complete { justify-content: flex-end; padding-bottom: max(28px, env(safe-area-inset-bottom)); pointer-events: none; }
   #complete .panel {
     pointer-events: auto;
@@ -129,14 +137,15 @@
   <canvas id="game"></canvas>
 
   <div id="title" class="screen">
-    <button id="gear-title" class="gear" aria-label="Ajustes">⚙</button>
+    <button id="gear-title" class="gear" aria-label="Ajustes"><svg viewBox="0 0 24 24" width="36" height="36" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"/></svg></button>
+    <div id="logo" class="logo" aria-label="Arkanietos"></div>
     <div id="greet" class="big">¡Hola!</div>
     <div id="count" class="mid"></div>
     <button id="play" class="btn">Jugar</button>
   </div>
 
   <div id="complete" class="screen">
-    <button id="gear-complete" class="gear" aria-label="Ajustes">⚙</button>
+    <button id="gear-complete" class="gear" aria-label="Ajustes"><svg viewBox="0 0 24 24" width="36" height="36" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"/></svg></button>
     <div class="panel" id="panel">
       <div id="well" class="big">¡Lo lograste!</div>
       <div id="caption" class="mid"></div>
@@ -155,7 +164,7 @@
   </div>
 
   <div id="pause" class="screen">
-    <button id="gear-pause" class="gear" aria-label="Ajustes">⚙</button>
+    <button id="gear-pause" class="gear" aria-label="Ajustes"><svg viewBox="0 0 24 24" width="36" height="36" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"/></svg></button>
     <div class="big" id="pause-text">Toca para seguir</div>
   </div>
 
@@ -210,11 +219,13 @@
     <h3>Sonido y vibración</h3>
     <label>Sonido <input type="checkbox" id="m-sound"></label>
     <label>Música de fondo <input type="checkbox" id="m-music"></label>
-    <label>Pista
+    <label>Pista para empezar (después cambia sola en cada nivel)
       <select id="m-track">
         <option value="fiesta">Fiesta</option>
         <option value="tropical">Tropical</option>
         <option value="misterio">Misteriosa</option>
+        <option value="merengue">Merengue</option>
+        <option value="bachata">Bachata</option>
       </select>
     </label>
     <label>Vibración <input type="checkbox" id="m-vibe"></label>
@@ -227,7 +238,7 @@
     <button class="mbtn primary" id="m-close">Guardar y volver</button>
   </div>
 
-  <script src="config.js?v=15"></script>
-  <script src="game.js?v=15"></script>
+  <script src="config.js?v=16"></script>
+  <script src="game.js?v=16"></script>
 </body>
 </html>

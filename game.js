@@ -64,7 +64,7 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '15 (2026-10-19)';
+  const VERSION = '16 (2026-10-19)'; // shown in the hidden menu; raise with every upload
   // index.html carries the same number. If they differ, the device got a mix of old and new
   // files (it happens for a few minutes after an upload): reload once to get a matching set.
   const htmlVersion = (document.querySelector('meta[name="app-version"]') || {}).content;
@@ -73,7 +73,7 @@
       if (!sessionStorage.getItem('ark.reloaded')) { sessionStorage.setItem('ark.reloaded', '1'); location.reload(); }
     } catch (e) { /* ignore */ }
   }
-  const FROG_SCALE = 0.56; // size of the frog relative to the first version (1 = the big one) // shown in the hidden menu; raise with every upload
+  const FROG_SCALE = 0.56; // size of the frog relative to the first version (1 = the big one)
 
   // ---------------------------------------------------------------- storage
   const store = {
@@ -227,10 +227,10 @@
     L.bw = (W - 2 * L.side - L.gap * (COLS - 1)) / COLS;
     L.bh = Math.min(Math.max(L.bw * 0.5, 22), H * 0.42 / 6 - L.gap);
     L.top = Math.max(H * 0.09, 40);
-    L.paddleY = H * 0.80;
+    L.paddleY = H * 0.85;
     L.paddleH = clamp(W * 0.05, 18, 34);
     L.ballR = clamp(W * 0.034, 10, 22);
-    L.netY = H * 0.94;
+    L.netY = H * 0.955;
     L.panelTop = L.panelTop || H * 0.62;
     moveBricks(levelTime);
     balls.forEach(b => { b.r = L.ballR; });
@@ -619,12 +619,17 @@
   }
   const vary = (f, semis) => f * 2 ** ((Math.random() * 2 - 1) * (semis || 0.5) / 12);
 
-  // --- music: three tracks, chosen in the settings menu. All are generated as they play.
+  // --- music: five tracks. The menu sets the track; each new level then switches to a
+  // different one at random (never in the middle of a level). All are generated as they play.
   //   fiesta:   festive "oom-pah" in C major, 132 bpm (bass, chord stabs, drums, lively melody)
   //   tropical: calypso feel in C major, 104 bpm (off-beat chord "skanks", steel-drum melody,
   //             clave and shaker)
   //   misterio: cheerful but mysterious, A minor with swing, 118 bpm (shimmering pad,
   //             plucked bass, xylophone melody, snaps)
+  //   merengue: Dominican merengue in G major, 140 bpm (accordion melody, güira, tambora,
+  //             piano off-beats, bouncing bass)
+  //   bachata:  Dominican bachata in E minor, 126 bpm (plucked requinto guitar melody, guitar
+  //             arpeggios, bongo martillo, güira, syncopated bass)
   // Plays while the game is open, stops while hidden or paused, steps back for the jingles.
   const MUSIC_AHEAD = 1.5, MUSIC_VOLUME = 0.045;
   const midiHz = n => 440 * 2 ** ((n - 69) / 12);
@@ -643,6 +648,16 @@
       bpm: 118, echo: 3 / 8, filter: 2600,
       chords: [[57, 60, 64, 33], [53, 57, 60, 29], [52, 56, 59, 28], [57, 60, 64, 33], [50, 53, 57, 26], [57, 60, 64, 33], [52, 56, 59, 28], [57, 60, 64, 33]],
       scale: [69, 71, 72, 74, 76, 77, 80, 81, 83, 84], root: 7 // A harmonic minor
+    },
+    merengue: {
+      bpm: 140, echo: 1 / 8, filter: 3200,
+      chords: [[55, 59, 62, 31], [54, 57, 60, 62, 26], [55, 59, 62, 31], [54, 57, 60, 62, 26], [55, 60, 64, 36], [55, 59, 62, 31], [54, 57, 60, 62, 26], [55, 59, 62, 31]],
+      scale: [67, 69, 71, 72, 74, 76, 78, 79, 81, 83], root: 7 // G major
+    },
+    bachata: {
+      bpm: 126, echo: 1 / 4, filter: 3000,
+      chords: [[52, 55, 59, 28], [50, 54, 57, 26], [48, 52, 55, 24], [51, 54, 57, 59, 23], [52, 55, 59, 28], [50, 54, 57, 26], [48, 52, 55, 24], [51, 54, 57, 59, 23]],
+      scale: [64, 66, 67, 69, 71, 72, 75, 76, 78, 79], root: 7 // E harmonic minor
     }
   };
   const musicStyle = () => MUSIC_STYLES[settings.track] || MUSIC_STYLES.fiesta;
@@ -722,6 +737,43 @@
         if (Math.random() < 0.3) continue;
         const f = nextMelody(st, n, i, 6), at = t + i * beat / 2 + (i % 2 ? sw : 0);
         musicNote(FE, f, 'triangle', at, 0.005, 0.02, 0.22, 0.26); musicNote(FE, f * 3, 'sine', at, 0.005, 0.01, 0.08, 0.06);
+      }
+    } else if (settings.track === 'merengue') {
+      // bouncing bass: root and fifth on every beat, octave pickup on the "and" of 4
+      [[0, 0], [1, 7], [2, 0], [3, 7], [3.5, 12]].forEach(([b, d]) => musicNote(F, midiHz(bass + d), 'triangle', t + b * beat, 0.005, 0.08, 0.12, 0.3));
+      // piano chords on the off-beats
+      [0.5, 1.5, 2.5, 3.5].forEach(b => pad.forEach(p => musicNote(F, midiHz(p + 12), 'triangle', t + b * beat, 0.003, 0.04, 0.09, 0.07)));
+      // tambora: low drum on 1 and 3, a slap on the "and" of 4
+      [0, 2].forEach(b => musicKick(t + b * beat, 0.55, 190, 110));
+      musicKick(t + 3.5 * beat, 0.35, 420, 260);
+      // güira: a longer scrape on each beat and two short ones after it
+      for (let b = 0; b < 4; b++) {
+        musicTick(t + b * beat, 0.11, 6500, 0.09);
+        musicTick(t + (b + 0.5) * beat, 0.06, 6500, 0.03);
+        musicTick(t + (b + 0.75) * beat, 0.06, 6500, 0.03);
+      }
+      // accordion melody: two slightly detuned reeds, short and lively
+      for (let i = 0; i < 8; i++) {
+        if (Math.random() < 0.12) continue;
+        const f = nextMelody(st, n, i, 6), at = t + i * beat / 2;
+        musicNote(FE, f, 'square', at, 0.008, 0.06, 0.08, 0.06, -8); musicNote(FE, f, 'square', at, 0.008, 0.06, 0.08, 0.06, 8);
+        if (i % 2 && Math.random() < 0.3) musicNote(FE, f, 'square', at + beat / 4, 0.006, 0.03, 0.06, 0.05); // a quick repeat
+      }
+    } else if (settings.track === 'bachata') {
+      // syncopated bass: root on 1, fifth on the "and" of 2, octave on 3, back to the root on the "and" of 4
+      [[0, 0], [1.5, 7], [2, 12], [3.5, 0]].forEach(([b, d]) => musicNote(F, midiHz(bass + d), 'sine', t + b * beat, 0.01, 0.15, 0.25, 0.38));
+      // rhythm guitar: the chord picked one note at a time, on eighths
+      for (let i = 0; i < 8; i++) musicNote(F, midiHz(pad[[0, 1, 2, 1][i % 4]] + 12), 'triangle', t + i * beat / 2, 0.003, 0.03, 0.18, 0.06);
+      // bongo martillo: high and low drums on eighths, the open note on 4
+      for (let i = 0; i < 8; i++) musicKick(t + i * beat / 2, i === 6 ? 0.3 : (i % 2 ? 0.12 : 0.2), i % 2 ? 520 : 400, i % 2 ? 420 : 300);
+      // güira on eighths, a longer scrape on 4
+      for (let i = 0; i < 8; i++) musicTick(t + i * beat / 2, i === 6 ? 0.12 : 0.06, 6000, i === 6 ? 0.12 : 0.035);
+      // requinto (lead guitar): plucked, quick decay, with a grace note now and then
+      for (let i = 0; i < 8; i++) {
+        if (Math.random() < 0.3) continue;
+        const f = nextMelody(st, n, i, 6), at = t + i * beat / 2;
+        if (Math.random() < 0.2) musicNote(FE, f * 0.944, 'triangle', at - beat / 8, 0.003, 0.01, 0.05, 0.12);
+        musicNote(FE, f, 'triangle', at, 0.003, 0.03, 0.3, 0.26); musicNote(FE, f * 2, 'sine', at, 0.003, 0.01, 0.1, 0.07);
       }
     } else { // fiesta
       pad.forEach(p => musicNote(F, midiHz(p), 'sine', t, 0.1, bar - 0.3, 0.3, 0.05));
@@ -1775,7 +1827,7 @@
     if (state === 'ready') {
       const pulse = 0.65 + 0.35 * Math.sin(stateTime * 4);
       text(T.tapToLaunch, W / 2, L.paddleY - H * 0.13, Math.min(W * 0.085, 42), pulse);
-      if (showMoveHint) text(T.moveHint, W / 2, L.paddleY + H * 0.09, Math.min(W * 0.065, 32), 0.9);
+      if (showMoveHint) text(T.moveHint, W / 2, L.paddleY + H * 0.065, Math.min(W * 0.065, 32), 0.9);
     }
     if (floaters.length) {
       const f = floaters[0], k = f.t / f.dur, pop = Math.min(1, f.t / 0.25);
@@ -1827,6 +1879,14 @@
 
   // ---------------------------------------------------------------- screens
   function updateTitle() {
+    // the game's name as a logo, one brick color per letter
+    const logo = $('logo');
+    if (logo && !logo.childElementCount) {
+      [...String(CFG.title || 'Arkanietos').toUpperCase()].forEach((ch, i) => {
+        const sp = document.createElement('span'); sp.textContent = ch; sp.style.color = COLORS[i % COLORS.length];
+        logo.appendChild(sp);
+      });
+    }
     const name = (settings.playerName || '').trim();
     $('greet').textContent = name ? fmt(T.hello, { name }) : fmt(T.hello, { name: '' }).replace(/,\s*!/, '!');
     $('count').textContent = progress.level > 0 ? fmt(T.nextLevel, { n: progress.level + 1 }) : '';

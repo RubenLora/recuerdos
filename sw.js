@@ -1,8 +1,8 @@
 // Offline support: network first (so new photos appear), cache as fallback.
 // Every cache operation is optional: if storage fails, the game still loads from the network.
 // Photos are stored encrypted, so the cache never holds a readable picture.
-const CACHE = 'recuerdos-v15';
-const CORE = ['./', './index.html', './game.js?v=15', './config.js?v=15',
+const CACHE = 'recuerdos-v16';
+const CORE = ['./', './index.html', './game.js?v=16', './config.js?v=16',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', e => {
