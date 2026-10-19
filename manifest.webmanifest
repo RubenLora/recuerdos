@@ -1,6 +1,6 @@
 {
-  "name": "Recuerdos",
-  "short_name": "Recuerdos",
+  "name": "Arkanietos",
+  "short_name": "Arkanietos",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",

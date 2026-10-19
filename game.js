@@ -64,7 +64,7 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '14 (2026-10-19)';
+  const VERSION = '15 (2026-10-19)';
   // index.html carries the same number. If they differ, the device got a mix of old and new
   // files (it happens for a few minutes after an upload): reload once to get a matching set.
   const htmlVersion = (document.querySelector('meta[name="app-version"]') || {}).content;
@@ -1833,7 +1833,7 @@
     $('play').textContent = T.play;
     $('next').textContent = T.next;
     $('pause-text').textContent = T.tapToContinue;
-    document.title = CFG.title || 'Recuerdos';
+    document.title = CFG.title || 'Arkanietos';
   }
 
   let wakeLock = null;

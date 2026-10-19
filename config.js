@@ -1,6 +1,6 @@
 // Easy settings. Edit with any text editor, then re-upload the app folder.
 window.GAME_CONFIG = {
-  title: 'Recuerdos',
+  title: 'Arkanietos',
   playerName: 'Papá', // greeting on the start screen: "¡Hola, Papá!"
 
   // Texts shown in the game. Keep them short.
