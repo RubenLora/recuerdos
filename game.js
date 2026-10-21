@@ -49,7 +49,7 @@
     { rows: ['SXXXXXS', 'X.....X', 'X.SSS.X', 'X.....X', 'SXXXXXS'] },
     { rows: ['X.X.X.X', 'S.X.X.S', 'X.X.X.X', 'X.S.S.X'], move: 'drift' },
     { rows: ['..XXX..', '.SXXXS.', '..XSX..', '.XXXXX.', '..SSS..'], move: 'wave' },
-    // 19-24: the hard ones
+    // 19-25: the hard ones
     { ring: [{ n: 16, r: 1, speed: -0.4, stones: [0, 4, 8, 12] }] },
     { rows: ['XXXXXXX', 'XSXSXSX', 'XXXXXXX', 'XSXSXSX', 'XXXXXXX'] },
     { rows: ['SXXSXXS', 'XXSXSXX', 'XSXXXSX', 'SXXSXXS'], move: 'bob' },
@@ -65,7 +65,7 @@
   // work on their own.
   const POWER_TYPES = ['multi', 'fire', 'hero', 'frog', 'cannon'];
   const POWER_DUR = { multi: 10, fire: 10, frog: 10, cannon: 8 };
-  const VERSION = '18 (2026-10-19)'; // shown in the hidden menu; raise with every upload
+  const VERSION = '19 (2026-10-21)'; // shown in the hidden menu; raise with every upload
   // index.html carries the same number. If they differ, the device got a mix of old and new
   // files (it happens for a few minutes after an upload): reload once to get a matching set.
   const htmlVersion = (document.querySelector('meta[name="app-version"]') || {}).content;
@@ -1413,7 +1413,9 @@
   }
 
   // The paddle gets cooler every six levels: 1 wood, 2 chrome, 3 neon with lights, 4 gold with gems.
-  const paddleTier = () => Math.floor((progress.level % LEVELS.length) / 6);
+  // 0 wood (1-6), 1 chrome (7-12), 2 neon (13-18), 3 gold (19-25). Capped at 3: there are 25 levels, and level 25
+  // asked for a fifth look that doesn't exist, which broke every frame (no paddle, no ball, game stuck).
+  const paddleTier = () => Math.min(3, Math.floor((progress.level % LEVELS.length) / 6));
   function drawPaddle() {
     const sq = paddle.squish * 0.15;
     const w = paddle.w * (1 + sq * 0.3), h = L.paddleH * (1 - sq);
@@ -1426,7 +1428,7 @@
       { stops: ['#ffd9f7', '#c07dff', '#6a2fb5'], line: '#3a1458', glow: 'rgba(255,120,230,.85)', blur: 20 },
       { stops: ['#fff6c9', '#ffd23a', '#c8900d', '#ffe27a'], line: '#5a3e00', glow: 'rgba(255,215,90,1)', blur: 24 + 8 * Math.sin(now * 4) }
     ];
-    const lk = magnet ? { stops: ['#e8f6ff', '#6fc3ff'], line: '#17456b', glow: 'rgba(120,200,255,.9)', blur: 22 } : looks[tier];
+    const lk = magnet ? { stops: ['#e8f6ff', '#6fc3ff'], line: '#17456b', glow: 'rgba(120,200,255,.9)', blur: 22 } : (looks[tier] || looks[0]);
     ctx.save();
     ctx.shadowColor = lk.glow; ctx.shadowBlur = lk.blur; ctx.shadowOffsetY = tier === 0 ? 4 : 0;
     const g = ctx.createLinearGradient(0, y, 0, y + h);
